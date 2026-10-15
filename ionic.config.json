@@ -1,0 +1,7 @@
+{
+  "name": "TareaFacil",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "angular-standalone"
+}
