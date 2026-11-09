@@ -1,0 +1,206 @@
+<ion-content class="register-content">
+
+  <main class="register-page">
+
+    <section class="register-layout">
+
+      <div class="register-mascot">
+
+        <img
+          src="assets/mascota-tareafacil.png"
+          alt=""
+          aria-hidden="true">
+
+      </div>
+
+      <section
+        class="register-card"
+        aria-labelledby="register-title">
+
+        <div class="register-heading">
+
+          <span class="eyebrow">
+            TAREAFÁCIL 2
+          </span>
+
+          <h1 id="register-title">
+            Crear cuenta
+          </h1>
+
+          <p>
+            Regístrate para comenzar a organizar tus tareas.
+          </p>
+
+        </div>
+
+        <div class="register-fields">
+
+          <div class="register-field">
+
+            <div
+              class="field-icon"
+              aria-hidden="true">
+
+              <ion-icon
+                name="person-outline">
+              </ion-icon>
+
+            </div>
+
+            <ion-input
+              type="text"
+              label="Nombre"
+              labelPlacement="stacked"
+              placeholder="Ingresa tu nombre"
+              autocomplete="name"
+              [(ngModel)]="name">
+            </ion-input>
+
+          </div>
+
+          <div class="register-field">
+
+            <div
+              class="field-icon"
+              aria-hidden="true">
+
+              <ion-icon
+                name="mail-outline">
+              </ion-icon>
+
+            </div>
+
+            <ion-input
+              type="email"
+              label="Correo"
+              labelPlacement="stacked"
+              placeholder="correo@ejemplo.cl"
+              autocomplete="email"
+              [(ngModel)]="email">
+            </ion-input>
+
+          </div>
+
+          <div class="register-field">
+
+            <div
+              class="field-icon"
+              aria-hidden="true">
+
+              <ion-icon
+                name="lock-closed-outline">
+              </ion-icon>
+
+            </div>
+
+            <ion-input
+              [type]="showPassword ? 'text' : 'password'"
+              label="Contraseña"
+              labelPlacement="stacked"
+              placeholder="Mínimo 6 caracteres"
+              autocomplete="new-password"
+              [(ngModel)]="password">
+              <button type="button" slot="end" class="password-toggle"
+                [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+                [attr.aria-pressed]="showPassword"
+                (click)="showPassword = !showPassword">
+                <ion-icon [name]="showPassword ? 'eye-off-outline' : 'eye-outline'" aria-hidden="true"></ion-icon>
+              </button>
+            </ion-input>
+
+          </div>
+
+          <div class="register-field">
+
+            <div
+              class="field-icon"
+              aria-hidden="true">
+
+              <ion-icon
+                name="lock-closed-outline">
+              </ion-icon>
+
+            </div>
+
+            <ion-input
+              [type]="showConfirmPassword ? 'text' : 'password'"
+              label="Confirmar contraseña"
+              labelPlacement="stacked"
+              placeholder="Repite tu contraseña"
+              autocomplete="new-password"
+              [(ngModel)]="confirmPassword">
+              <button type="button" slot="end" class="password-toggle"
+                [attr.aria-label]="showConfirmPassword ? 'Ocultar confirmación de contraseña' : 'Mostrar confirmación de contraseña'"
+                [attr.aria-pressed]="showConfirmPassword"
+                (click)="showConfirmPassword = !showConfirmPassword">
+                <ion-icon [name]="showConfirmPassword ? 'eye-off-outline' : 'eye-outline'" aria-hidden="true"></ion-icon>
+              </button>
+            </ion-input>
+
+          </div>
+
+        </div>
+
+        @if (message) {
+
+          <p
+            class="register-message"
+            role="status"
+            aria-live="polite">
+
+            {{ message }}
+
+          </p>
+
+        }
+
+        <ion-button
+          class="register-button"
+          expand="block"
+          [disabled]="isSubmitting"
+          (click)="register()">
+
+          <ion-icon
+            slot="start"
+            name="person-add-outline"
+            aria-hidden="true">
+          </ion-icon>
+
+          {{
+            isSubmitting
+              ? 'Creando cuenta...'
+              : 'Crear cuenta'
+          }}
+
+        </ion-button>
+
+        <div class="login-area">
+
+          <span>
+            ¿Ya tienes cuenta?
+          </span>
+
+          <ion-button
+            class="login-link"
+            fill="clear"
+            (click)="goToLogin()">
+
+            <ion-icon
+              slot="start"
+              name="arrow-back-outline"
+              aria-hidden="true">
+            </ion-icon>
+
+            Iniciar sesión
+
+          </ion-button>
+
+        </div>
+
+      </section>
+
+    </section>
+
+  </main>
+
+</ion-content>

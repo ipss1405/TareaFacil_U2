@@ -1,0 +1,355 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button routerLink="/summary" aria-label="Volver a Inicio">
+        <ion-icon
+          slot="start"
+          name="arrow-back-outline"
+          aria-hidden="true">
+        </ion-icon>
+        Inicio
+      </ion-button>
+    </ion-buttons>
+    <ion-title>Mis tareas</ion-title>
+
+
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <main class="workspace">
+
+    <section
+      class="tasks-section"
+      aria-labelledby="list-heading">
+
+      <div class="list-heading">
+        <div>
+          <span class="eyebrow">A TU RITMO</span>
+          <h2 id="list-heading">Mis tareas</h2>
+        </div>
+
+
+      </div>
+
+      <section class="week-preview" aria-label="Agenda semanal">
+        <div class="week-navigation">
+          <ion-button class="previous-week" fill="clear" (click)="changeWeek(-1)" aria-label="Semana anterior"><ion-icon slot="icon-only" name="arrow-back-outline" aria-hidden="true"></ion-icon></ion-button>
+          <ion-button class="current-week" fill="clear" (click)="showCurrentWeek()">Semana actual</ion-button>
+          <ion-button class="next-week" fill="clear" (click)="changeWeek(1)" aria-label="Semana siguiente"><ion-icon slot="icon-only" name="arrow-forward-outline" aria-hidden="true"></ion-icon></ion-button>
+        </div>
+        <p class="week-label">{{ weekLabel }}</p>
+        <div class="week-days" role="group" aria-label="Seleccionar día">
+          @for (day of weekDays; track day.key) {
+            <button type="button" [attr.data-day]="day.key" [class.selected]="selectedDate === day.key"
+              [attr.aria-pressed]="selectedDate === day.key" [attr.aria-label]="day.accessibleLabel"
+              (click)="selectDay(day.key)">
+              <span>{{ day.label }}</span><strong>{{ day.number }}</strong>
+            </button>
+          }
+        </div>
+      </section>
+
+      <div class="list-controls">
+
+        <ion-searchbar
+          aria-label="Buscar tareas por título o descripción"
+          placeholder="Buscar tareas"
+          [(ngModel)]="searchQuery"
+          (ngModelChange)="resetInvalidPage()"
+          [debounce]="0">
+        </ion-searchbar>
+
+        <ion-segment
+          aria-label="Filtrar tareas por estado"
+          [(ngModel)]="statusFilter"
+          (ngModelChange)="resetInvalidPage()">
+
+          <ion-segment-button value="all">
+            <ion-label>Todas</ion-label>
+          </ion-segment-button>
+
+          <ion-segment-button value="pending">
+            <ion-label>Pendientes</ion-label>
+          </ion-segment-button>
+
+          <ion-segment-button value="completed">
+            <ion-label>Completadas</ion-label>
+          </ion-segment-button>
+
+        </ion-segment>
+
+        <p class="result-count" role="status">
+          {{ filteredTasks.length }} resultados del día y de «Sin programar»
+        </p>
+
+      </div>
+
+      <h3 class="selected-day" aria-live="polite">{{ selectedDayLabel }}</h3>
+      @if (tasks.length > 0 && !hasScheduledResults) {
+        <p class="day-empty" role="status">No hay tareas programadas para este día con estos filtros.</p>
+      }
+
+      @if (tasks.length === 0) {
+
+        <div
+          class="empty-state"
+          role="status">
+
+          <span
+            class="empty-icon"
+            aria-hidden="true">
+
+            <ion-icon name="checkmark-circle-outline"></ion-icon>
+
+          </span>
+
+          <h3>No tienes tareas registradas</h3>
+
+          <p>
+            Agrega tu primera tarea con el botón Nueva tarea.
+          </p>
+
+        </div>
+
+      }
+
+      @if (tasks.length > 0 && filteredTasks.length === 0) {
+
+        <div
+          class="empty-state"
+          role="status">
+
+          <h3>No hay tareas que coincidan</h3>
+
+          <p>
+            Prueba con otra búsqueda o cambia el filtro de estado.
+          </p>
+
+        </div>
+
+      }
+
+      @if (filteredTasks.length > 0) {
+
+        @for (group of taskGroups; track group.key) {
+          @if (group.tasks.length > 0) {
+          <section class="task-group" [attr.aria-labelledby]="group.key + '-heading'">
+          <h3 class="group-heading" [id]="group.key + '-heading'">{{ group.label }}</h3>
+        <ion-list
+          class="task-list" [class.unscheduled-list]="group.key === 'unscheduled'"
+          role="list"
+          aria-label="Tareas de la página actual">
+
+          @for (task of group.tasks; track task.id) {
+            <div class="agenda-entry">
+              @if (task.scheduledAt) {
+                <time class="timeline-time" [attr.datetime]="task.scheduledAt" [attr.aria-label]="'Hora programada: ' + formatScheduledTime(task.scheduledAt)">{{ formatScheduledTime(task.scheduledAt) }}</time>
+              }
+
+            <ion-item
+              class="task-card"
+              [class.completed-task]="task.completed"
+              role="listitem"
+              lines="none"
+              [button]="false"
+              [detail]="false">
+
+              <div class="task-card-content">
+
+                <ion-button
+                  class="check-button"
+                  fill="clear"
+                  (click)="toggleTask(task)"
+                  [attr.aria-pressed]="task.completed"
+                  [attr.aria-label]="
+                    (task.completed
+                      ? 'Marcar como pendiente: '
+                      : 'Marcar como completada: ')
+                    + task.title
+                  ">
+
+                  <ion-icon
+                    slot="icon-only"
+                    [name]="
+                      task.completed
+                        ? 'checkmark-circle-outline'
+                        : 'ellipse-outline'
+                    "
+                    aria-hidden="true">
+                  </ion-icon>
+
+                </ion-button>
+
+                <div class="task-info">
+
+                  <div class="task-meta">
+
+                    <span class="task-number">
+                      Tarea #
+                      {{ taskNumber(task) }}
+                    </span>
+
+                    <span class="status-badge">
+                      {{
+                        task.completed
+                          ? 'Completada'
+                          : 'Pendiente'
+                      }}
+                    </span>
+
+                  </div>
+
+                  <h3>{{ task.title }}</h3>
+
+                  <p>{{ task.description }}</p>
+
+                  @if (task.scheduledAt) {
+                    @if (formatScheduledAt(task.scheduledAt); as scheduledLabel) {
+                      <p class="task-schedule"><strong>Programada:</strong> {{ scheduledLabel }}</p>
+                    }
+                  }
+
+                  @if (task.createdAt) {
+                    <p class="task-date">
+                      Creada: {{ formatCreatedAt(task.createdAt) }}
+                    </p>
+                  }
+
+                  @if ((task.latitude !== undefined && task.longitude !== undefined) || task.photoPath) {
+                    <div class="task-resources" role="group" aria-label="Recursos de la tarea">
+                      @if (task.latitude !== undefined && task.longitude !== undefined) {
+                        <span class="resource-chip location-chip">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="resource-icon" aria-hidden="true" focusable="false"><path d="M256 48c-79.5 0-144 61.39-144 137 0 87 96 224.87 131.25 272.49a15.77 15.77 0 0 0 25.5 0C304 409.89 400 272.07 400 185c0-75.61-64.5-137-144-137" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32px"/><circle cx="256" cy="192" r="48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32px"/></svg>
+                          <span class="chip-copy">
+                            <span>Ubicación registrada</span>
+                            @if (task.accuracy !== undefined) {
+                              <span class="resource-accuracy">Precisión: {{ task.accuracy.toFixed(1) }} m</span>
+                            }
+                          </span>
+                        </span>
+                      }
+                      @if (task.photoPath) {
+                        <span class="resource-chip photo-chip">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="resource-icon" aria-hidden="true" focusable="false"><path d="m350.54 148.68-26.62-42.06C318.31 100.08 310.62 96 302 96h-92c-8.62 0-16.31 4.08-21.92 10.62l-26.62 42.06C155.85 155.23 148.62 160 140 160H80a32 32 0 0 0-32 32v192a32 32 0 0 0 32 32h352a32 32 0 0 0 32-32V192a32 32 0 0 0-32-32h-59c-8.65 0-16.85-4.77-22.46-11.32" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32px"/><circle cx="256" cy="272" r="80" fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32px"/><path d="M124 158v-22h-24v22" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32px"/></svg>
+                          <span>Fotografía adjunta</span>
+                        </span>
+                      }
+                    </div>
+                  }
+
+                </div>
+
+                <div class="task-actions">
+
+                  <ion-button
+                    class="edit-button"
+                    fill="clear"
+                    [routerLink]="['/task-form', task.id]"
+                    [attr.aria-label]="'Editar tarea: ' + task.title">
+
+                    <ion-icon
+                      slot="icon-only"
+                      name="pencil-outline"
+                      aria-hidden="true">
+                    </ion-icon>
+
+                  </ion-button>
+
+                  <ion-button
+                    class="delete-button"
+                    fill="clear"
+                    (click)="confirmDeleteTask(task)"
+                    title="Eliminar tarea"
+                    [attr.aria-label]="'Eliminar tarea: ' + task.title">
+
+                    <ion-icon
+                      slot="icon-only"
+                      name="trash-outline"
+                      aria-hidden="true">
+                    </ion-icon>
+
+                  </ion-button>
+
+                </div>
+
+              </div>
+
+            </ion-item>
+            </div>
+
+          }
+
+        </ion-list>
+          </section>
+          }
+        }
+
+      }
+
+      @if (totalPages > 1) {
+
+        <nav
+          class="pagination"
+          aria-label="Paginación de tareas">
+
+          <ion-button
+            fill="clear"
+            [disabled]="currentPage === 1"
+            (click)="previousPage()">
+
+            <ion-icon
+              slot="start"
+              name="arrow-back-outline"
+              aria-hidden="true">
+            </ion-icon>
+
+            Anterior
+
+          </ion-button>
+
+          <span
+            class="page-info"
+            aria-live="polite">
+
+            <strong>{{ currentPage }}</strong>
+            de {{ totalPages }}
+
+          </span>
+
+          <ion-button
+            fill="clear"
+            [disabled]="currentPage === totalPages"
+            (click)="nextPage()">
+
+            Siguiente
+
+            <ion-icon
+              slot="end"
+              name="arrow-forward-outline"
+              aria-hidden="true">
+            </ion-icon>
+
+          </ion-button>
+
+        </nav>
+
+      }
+
+    </section>
+
+  </main>
+        <ion-button
+          class="primary-button new-task-float"
+          slot="fixed"
+          routerLink="/task-form">
+
+          <ion-icon
+            slot="start"
+            name="add-outline"
+            aria-hidden="true">
+          </ion-icon>
+
+          Nueva tarea
+        </ion-button>
+</ion-content>

@@ -35,3 +35,26 @@
 /* @import "@ionic/angular/css/palettes/dark.always.css"; */
 /* @import "@ionic/angular/css/palettes/dark.class.css"; */
 @import '@ionic/angular/css/palettes/dark.system.css';
+
+/* Ionic overlays live outside the page: scope the confirmation styles here. */
+ion-alert.task-delete-alert {
+  --background: #ffffff;
+  --width: calc(100% - 40px);
+  --max-width: 360px;
+  --backdrop-opacity: .25;
+  color-scheme: light;
+
+  .alert-wrapper {
+    border: 1px solid #f6f4ff;
+    border-radius: 24px;
+    box-shadow: 10px 12px 32px rgba(45, 42, 69, .17), -4px -4px 18px rgba(255, 255, 255, .5);
+  }
+  .alert-title { color: #2d2a45; font-size: 20px; font-weight: 750; }
+  .alert-sub-title { color: #2d2a45; font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; }
+  .alert-message { color: #6b6690; font-size: 14px; line-height: 1.5; }
+  .alert-button-group { gap: 8px; padding: 8px 16px 16px; }
+  .alert-button { min-height: 44px; margin: 0; border-radius: 12px; font-weight: 650; text-transform: none; }
+  .cancel-delete { background: #f6f4ff; color: #6b6690; }
+  .confirm-delete { background: #ffdfd1; color: #783d36; }
+  .alert-button:focus-visible { outline: 2px solid #6d5ae6; outline-offset: 2px; }
+}

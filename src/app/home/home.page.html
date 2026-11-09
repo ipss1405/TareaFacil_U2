@@ -1,20 +1,98 @@
-<ion-header [translucent]="true">
+﻿<ion-header class="app-header">
   <ion-toolbar>
-    <ion-title>
-      Blank
-    </ion-title>
+    <ion-title>Inicio</ion-title>
+    <ion-buttons slot="end">
+      <ion-button class="logout-button" fill="clear" [disabled]="isLoggingOut" (click)="logout()">
+        <ion-icon slot="start" name="log-out-outline" aria-hidden="true"></ion-icon>
+        {{ isLoggingOut ? 'Saliendo...' : 'Cerrar sesión' }}
+      </ion-button>
+    </ion-buttons>
   </ion-toolbar>
 </ion-header>
+<ion-content>
+  <main class="workspace">
+    <section class="sync-panel" aria-label="Sincronización de tareas">
+      <ion-button class="sync-button" fill="clear" [disabled]="taskSync.running()" [attr.aria-busy]="taskSync.running()" (click)="taskSync.sync()">
+        <ion-icon slot="start" name="sync-outline" aria-hidden="true"></ion-icon>Sincronizar
+      </ion-button>
+      <div role="status" aria-live="polite">
+        <span>{{ taskSync.label() }}</span>
+        <small>{{ taskRealtime.label() }}</small>
+        @if (taskRealtime.state().message; as realtimeMessage) { <small>{{ realtimeMessage }}</small> }
+        @if (taskSync.state().lastSyncedAt; as lastSync) {
+          <small>Última sincronización: {{ lastSync | date:'dd-MM-yyyy HH:mm' }}</small>
+        }
+        @if (taskSync.state().message; as message) { <small>{{ message }}</small> }
+      </div>
+    </section>
+    <section class="overview" aria-labelledby="welcome-heading">
+      <div class="welcome-row">
+        <div class="welcome-copy">
+          <span class="eyebrow">TU DÍA, A TU RITMO</span>
+          <h1 id="welcome-heading">¡Hola! <span class="greeting-wave" aria-hidden="true">&#128075;</span></h1>
+          <p>Organiza tus tareas con<br>TareaFácil 2</p>
+        </div>
+        <div class="small-mascot" aria-hidden="true">
+          <img src="assets/mascota-tareafacil.png" alt="" class="mascot-image" draggable="false" />
+        </div>
+      </div>
 
-<ion-content [fullscreen]="true">
-  <ion-header collapse="condense">
-    <ion-toolbar>
-      <ion-title size="large">Blank</ion-title>
-    </ion-toolbar>
-  </ion-header>
+      <section class="feature-card" aria-labelledby="app-heading">
+        <div class="feature-copy">
+          <span class="feature-tag">UN NUEVO CAPÍTULO</span>
+          <h2 id="app-heading">TareaFácil <span>2</span></h2>
+          <p>Tareas, fotografías, ubicación y sincronización</p>
+        </div>
+        <div class="feature-icons" aria-hidden="true">
+          <span><ion-icon name="layers-outline"></ion-icon></span>
+          <span><ion-icon name="camera-outline"></ion-icon></span>
+          <span><ion-icon name="location-outline"></ion-icon></span>
+        </div>
+      </section>
 
-  <div id="container">
-    <strong>Ready to create an app?</strong>
-    <p>Start with Ionic <a target="_blank" rel="noopener noreferrer" href="https://ionicframework.com/docs/components">UI Components</a></p>
-  </div>
+      <div class="section-heading"><h2>Resumen de mis tareas</h2><span class="section-caption">Cada paso cuenta</span></div>
+      <div class="summary" aria-live="polite" aria-atomic="true">
+        <div class="stat stat-total">
+          <span class="stat-icon"><ion-icon name="layers-outline" aria-hidden="true"></ion-icon></span>
+          <strong>{{ taskService.totalTasks() }}</strong><span>Total</span>
+        </div>
+        <div class="stat stat-pending">
+          <span class="stat-icon"><ion-icon name="ellipse-outline" aria-hidden="true"></ion-icon></span>
+          <strong>{{ taskService.pendingTasks() }}</strong><span>Pendientes</span>
+        </div>
+        <div class="stat stat-completed">
+          <span class="stat-icon"><ion-icon name="checkmark-circle-outline" aria-hidden="true"></ion-icon></span>
+          <strong>{{ taskService.completedTasks() }}</strong><span>Completadas</span>
+        </div>
+      </div>
+      <div class="progress-card">
+        <div class="progress-heading"><span>Tu progreso</span><p id="progress-label" aria-live="polite">{{ taskService.completedTasks() }} de {{ taskService.totalTasks() }} completadas</p></div>
+        <ion-progress-bar [value]="taskService.completionProgress()" aria-labelledby="progress-label" [attr.aria-valuetext]="taskService.completedTasks() + ' de ' + taskService.totalTasks() + ' completadas'"></ion-progress-bar>
+      </div>
+    </section>
+
+    <section class="status-section" aria-labelledby="status-heading">
+      <div class="section-heading"><h2 id="status-heading">Estado de mis tareas</h2></div>
+      <div class="status-card">
+        <div class="task-donut" [class.is-empty]="taskService.totalTasks() === 0"
+          [style.--completed-angle]="(taskService.completionProgress() * 360) + 'deg'"
+          role="img" [attr.aria-label]="'Estado de mis tareas: ' + taskService.pendingTasks() + ' pendientes y ' + taskService.completedTasks() + ' completadas. ' + (taskService.completionProgress() * 100).toFixed(0) + '% completadas.'">
+          <div class="donut-center" aria-hidden="true">
+            <strong>{{ (taskService.completionProgress() * 100).toFixed(0) }}%</strong>
+            <span>completadas</span>
+          </div>
+        </div>
+        <dl class="status-legend" aria-live="polite" aria-atomic="true">
+          <div><dt><span class="legend-dot pending-dot" aria-hidden="true"></span>Pendientes</dt><dd>{{ taskService.pendingTasks() }}</dd></div>
+          <div><dt><span class="legend-dot completed-dot" aria-hidden="true"></span>Completadas</dt><dd>{{ taskService.completedTasks() }}</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <div class="home-actions">
+      <ion-button class="primary-button" expand="block" routerLink="/home"><ion-icon slot="start" name="checkmark-circle-outline" aria-hidden="true"></ion-icon>Ver mis tareas</ion-button>
+      <ion-button class="secondary-button" expand="block" routerLink="/task-form"><ion-icon slot="start" name="add-outline" aria-hidden="true"></ion-icon>Nueva tarea</ion-button>
+    </div>
+    <ion-button class="import-tasks-link" expand="block" routerLink="/import-tasks"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" slot="start" aria-hidden="true" focusable="false"><path d="M336 176h40a40 40 0 0 1 40 40v208a40 40 0 0 1-40 40H136a40 40 0 0 1-40-40V216a40 40 0 0 1 40-40h40" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32px"/><path d="m176 272 80 80 80-80M256 48v288" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32px"/></svg>Importar tareas</ion-button>
+  </main>
 </ion-content>

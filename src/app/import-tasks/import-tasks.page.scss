@@ -1,0 +1,22 @@
+@use "../shared/soft-ui";
+.workspace { max-width: 700px; padding-top: 16px; }
+ion-title { font-size: 18px; }
+h1 { font-size: 25px; letter-spacing: -.7px; }
+.import-card { min-width: 0; padding: 18px; background: white; border-radius: 24px; box-shadow: var(--lift); }
+.intro, .feedback { color: var(--muted); font-size: 14px; line-height: 1.5; }
+.refresh-button { margin-bottom: 10px; }
+.feedback { padding: 10px; border-radius: 12px; background: var(--soft); }
+.error-message { background: #fff0e9; color: #783d36; }
+.success-message { background: #e6f8ef; color: #286650; }
+ion-progress-bar { --background: #e8e3f9; --progress-background: var(--violet); border-radius: 8px; }
+.candidate-list { display: grid; gap: 10px; margin: 12px 0; padding: 0; background: transparent; }
+.candidate { --color: var(--ink); --background: var(--soft); --padding-start: 6px; --inner-padding-end: 12px; --border-radius: 18px; border-radius: 18px; min-width: 0; }
+.candidate ion-checkbox { --size: 22px; --checkbox-background-checked: var(--violet); --border-color-checked: var(--violet); padding: 11px; margin: 0; }
+.candidate ion-checkbox:focus-within { outline: 2px solid var(--violet); outline-offset: -2px; border-radius: 10px; }
+.candidate-copy { min-width: 0; padding: 12px 0; }
+.candidate h2 { margin: 0 0 6px; font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; }
+.state, .imported-label { display: inline-block; margin: 0 5px 3px 0; padding: 3px 6px; font-size: 12px; border-radius: 8px; background: #ffe9df; color: #86432d; }
+.state.completed, .imported-label { background: #d9f4e9; color: #245d4e; }
+.already-imported { --background: #f0faf5; }
+.import-button { margin-top: 16px; }
+@media (max-width: 480px) { .import-card { padding: 14px; } }

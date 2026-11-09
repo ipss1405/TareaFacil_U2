@@ -1,0 +1,311 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+
+    <ion-buttons slot="start">
+      <ion-back-button
+        defaultHref="/home"
+        text=""
+        aria-label="Volver">
+      </ion-back-button>
+    </ion-buttons>
+
+    <ion-title>
+      {{ editingId === null ? 'Nueva tarea' : 'Editar tarea' }}
+    </ion-title>
+
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+
+  <main class="workspace">
+
+    <section
+      class="form-card"
+      aria-labelledby="form-heading">
+
+      <div class="section-heading">
+
+        <span
+          class="section-symbol"
+          aria-hidden="true">
+
+          <ion-icon
+            [name]="editingId === null
+              ? 'add-outline'
+              : 'pencil-outline'">
+          </ion-icon>
+
+        </span>
+
+        <div>
+
+          <span class="eyebrow">
+            TU ESPACIO PARA ORGANIZAR
+          </span>
+
+          <h2 id="form-heading">
+            {{
+              editingId === null
+                ? 'Agregar nueva tarea'
+                : 'Editar tarea'
+            }}
+          </h2>
+
+        </div>
+
+      </div>
+
+      <div
+        class="validation-message"
+        [class.is-visible]="validationMessage"
+        role="alert"
+        aria-atomic="true">
+
+        @if (validationMessage) {
+          <p>
+            {{ validationMessage }}
+          </p>
+        }
+
+      </div>
+
+      <!-- INFORMACIÓN -->
+
+      <section
+        class="information-section"
+        aria-labelledby="information-heading">
+
+        <h3 id="information-heading">
+          Información
+        </h3>
+
+        <ion-item
+          class="form-field"
+          [class.field-invalid]="titleMissing"
+          lines="none">
+
+          <ion-input
+            label="Título"
+            labelPlacement="stacked"
+            [(ngModel)]="newTitle"
+            placeholder="Ingrese el título"
+            required
+            pattern="[\s\S]*\S[\s\S]*"
+            [errorText]="
+              validationAttempted
+                ? 'Ingresa el título de la tarea.'
+                : undefined
+            ">
+          </ion-input>
+
+        </ion-item>
+
+        <ion-item
+          class="form-field"
+          [class.field-invalid]="descriptionMissing"
+          lines="none">
+
+          <ion-input
+            label="Descripción"
+            labelPlacement="stacked"
+            [(ngModel)]="newDescription"
+            placeholder="Ingrese la descripción"
+            required
+            pattern="[\s\S]*\S[\s\S]*"
+            [errorText]="
+              validationAttempted
+                ? 'Ingresa la descripción de la tarea.'
+                : undefined
+            ">
+          </ion-input>
+
+        </ion-item>
+
+      </section>
+
+      <!-- PROGRAMACIÓN -->
+
+      <section
+        class="schedule-section"
+        aria-labelledby="schedule-heading">
+
+        <h3 id="schedule-heading">
+          Programación
+        </h3>
+
+        <p class="schedule-hint">
+          Opcional. Completa fecha y hora, o deja ambas vacías.
+        </p>
+
+        <div class="schedule-fields">
+
+          <ion-item
+            class="form-field"
+            lines="none"
+            [class.field-invalid]="scheduleMessage">
+
+            <ion-input
+              type="date"
+              label="Fecha"
+              labelPlacement="stacked"
+              [(ngModel)]="scheduledDate"
+              aria-describedby="schedule-help"
+              [attr.aria-invalid]="
+                scheduleMessage
+                  ? 'true'
+                  : null
+              ">
+            </ion-input>
+
+          </ion-item>
+
+          <ion-item
+            class="form-field"
+            lines="none"
+            [class.field-invalid]="scheduleMessage">
+
+            <ion-input
+              type="time"
+              label="Hora"
+              labelPlacement="stacked"
+              [(ngModel)]="scheduledTime"
+              aria-describedby="schedule-help"
+              [attr.aria-invalid]="
+                scheduleMessage
+                  ? 'true'
+                  : null
+              ">
+            </ion-input>
+
+          </ion-item>
+
+        </div>
+
+        <p
+          id="schedule-help"
+          class="schedule-hint">
+
+          Fecha y hora locales para realizar la tarea.
+
+        </p>
+
+      </section>
+
+      <!-- UBICACIÓN -->
+
+      <section class="resources-section" aria-labelledby="resources-heading">
+        <h3 id="resources-heading">Recursos de la tarea</h3>
+        <div class="resources-grid">
+          <div class="resource-card location-resource" [class.is-attached]="hasLocation">
+            <button type="button" class="resource-trigger" [disabled]="isGettingLocation"
+              [attr.aria-busy]="isGettingLocation" aria-describedby="location-feedback"
+              [attr.aria-label]="hasLocation ? 'Actualizar ubicación registrada' : 'Obtener ubicación'"
+              (click)="getCurrentLocation()">
+              <span class="resource-symbol" aria-hidden="true"><ion-icon name="location-outline"></ion-icon></span>
+              <strong>Ubicación</strong>
+              <span class="resource-state">{{ isGettingLocation ? 'Obteniendo...' : hasLocation ? 'Registrada' : 'No registrada' }} @if (hasLocation && !isGettingLocation) { <span aria-hidden="true">✓</span> }</span>
+              @if (hasLocation && accuracy !== undefined) {
+                <span class="resource-detail">Precisión: {{ accuracy.toFixed(1) }} m</span>
+              }
+            </button>
+            @if (hasLocation) {
+              <div class="resource-actions">
+                <ion-button class="resource-update" fill="clear" [disabled]="isGettingLocation" (click)="getCurrentLocation()" aria-label="Actualizar ubicación">Actualizar</ion-button>
+                <ion-button class="resource-remove" fill="clear" (click)="removeLocation()" aria-label="Quitar ubicación" title="Quitar ubicación"><ion-icon slot="icon-only" name="close-outline" aria-hidden="true"></ion-icon></ion-button>
+              </div>
+            }
+          </div>
+          <div class="resource-card photo-resource" [class.is-attached]="!!photoPath">
+            <button type="button" class="resource-trigger" [disabled]="isTakingPhoto"
+              [attr.aria-busy]="isTakingPhoto" aria-describedby="camera-feedback"
+              [attr.aria-label]="photoPath ? 'Cambiar fotografía adjunta' : 'Tomar fotografía'"
+              (click)="takePhoto()">
+              @if (photoPath) {
+                <img
+                  class="resource-thumbnail"
+                  [src]="photoPreviewUrl"
+                  alt="Vista previa de la fotografía adjunta" />
+              } @else {
+                <span class="resource-symbol" aria-hidden="true"><ion-icon name="camera-outline"></ion-icon></span>
+              }
+              <strong>Fotografía</strong>
+              <span class="resource-state">{{ isTakingPhoto ? 'Abriendo...' : photoPath ? 'Adjunta' : 'Sin fotografía' }} @if (photoPath && !isTakingPhoto) { <span aria-hidden="true">✓</span> }</span>
+            </button>
+            @if (photoPath) {
+              <div class="resource-actions">
+                <ion-button class="resource-update" fill="clear" [disabled]="isTakingPhoto" (click)="takePhoto()" aria-label="Cambiar fotografía">Cambiar</ion-button>
+                <ion-button class="resource-remove" fill="clear" (click)="removePhoto()" aria-label="Quitar fotografía" title="Quitar fotografía"><ion-icon slot="icon-only" name="close-outline" aria-hidden="true"></ion-icon></ion-button>
+              </div>
+            }
+          </div>
+        </div>
+        <p id="location-feedback" class="resource-message" role="status" aria-live="polite">{{ locationMessage }}</p>
+        <p id="camera-feedback" class="resource-message" role="status" aria-live="polite">{{ cameraMessage }}</p>
+      </section>
+
+      <!-- ACCIONES -->
+
+      <div class="form-actions">
+
+        @if (editingId === null) {
+
+          <ion-button
+            class="primary-button"
+            expand="block"
+            (click)="saveTask()">
+
+            <ion-icon
+              slot="start"
+              name="add-outline"
+              aria-hidden="true">
+            </ion-icon>
+
+            Agregar tarea
+
+          </ion-button>
+
+        }
+
+        @if (editingId !== null) {
+
+          <ion-button
+            class="save-button"
+            expand="block"
+            (click)="saveTask()">
+
+            <ion-icon
+              slot="start"
+              name="checkmark-outline"
+              aria-hidden="true">
+            </ion-icon>
+
+            Guardar cambios
+
+          </ion-button>
+
+          <ion-button
+            class="cancel-button"
+            expand="block"
+            fill="clear"
+            (click)="cancelEdit()">
+
+            <ion-icon
+              slot="start"
+              name="close-outline"
+              aria-hidden="true">
+            </ion-icon>
+
+            Cancelar
+
+          </ion-button>
+
+        }
+
+      </div>
+
+    </section>
+
+  </main>
+
+</ion-content>

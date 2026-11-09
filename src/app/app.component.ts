@@ -1,4 +1,5 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
+import { TaskRealtimeService } from './task-realtime.service';
 import { IonApp, IonRouterOutlet } from '@ionic/angular';
 
 @Component({
@@ -7,5 +8,6 @@ import { IonApp, IonRouterOutlet } from '@ionic/angular';
   imports: [IonApp, IonRouterOutlet],
 })
 export class AppComponent {
-  constructor() {}
+  // The service lives for the app lifetime, including agenda and form routes.
+  readonly taskRealtime = inject(TaskRealtimeService);
 }

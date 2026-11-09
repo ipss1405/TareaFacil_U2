@@ -1,0 +1,500 @@
+import {
+  Injectable,
+  computed,
+  inject,
+  signal
+} from '@angular/core';
+
+import {
+  Preferences
+} from '@capacitor/preferences';
+
+import {
+  User
+} from './user.model';
+import { SupabaseAuthService } from './supabase-auth.service';
+
+export interface AuthResult {
+  success: boolean;
+  message: string;
+}
+
+@Injectable({
+  providedIn: 'root'
+})
+export class AuthService {
+
+  private readonly remoteAuth = inject(SupabaseAuthService);
+
+  private readonly usersKey =
+    'tareafacil_users';
+
+  private readonly sessionKey =
+    'tareafacil_current_user_id';
+
+  private readonly usersState =
+    signal<User[]>([]);
+
+  private readonly currentUserState =
+    signal<User | null>(null);
+
+  private readonly readyState =
+    signal(false);
+
+  readonly currentUser =
+    this.currentUserState.asReadonly();
+
+  readonly isReady =
+    this.readyState.asReadonly();
+
+  readonly isAuthenticated = computed(
+    () => this.currentUser() !== null
+  );
+
+  constructor() {
+    void this.initialize();
+  }
+
+  async register(
+    name: string,
+    email: string,
+    password: string
+  ): Promise<AuthResult> {
+
+    const cleanName =
+      name.trim();
+
+    const cleanEmail =
+      email.trim().toLowerCase();
+
+    if (
+      !cleanName ||
+      !cleanEmail ||
+      !password
+    ) {
+      return {
+        success: false,
+        message:
+          'Completa nombre, correo y contraseña.'
+      };
+    }
+
+    if (
+      !this.isValidEmail(cleanEmail)
+    ) {
+      return {
+        success: false,
+        message:
+          'Ingresa un correo válido.'
+      };
+    }
+
+    if (
+      password.length < 6
+    ) {
+      return {
+        success: false,
+        message:
+          'La contraseña debe tener al menos 6 caracteres.'
+      };
+    }
+
+    const existingUser =
+      this.usersState()
+        .find(
+          user =>
+            user.email === cleanEmail
+        );
+
+    if (existingUser) {
+      return {
+        success: false,
+        message:
+          'Ya existe una cuenta con este correo.'
+      };
+    }
+
+    const passwordHash =
+      await this.createPasswordHash(
+        password
+      );
+
+    const remote = await this.remoteAuth.signUp(cleanEmail, password, cleanName);
+    if (!remote.success) {
+      return { success: false, message: remote.message };
+    }
+
+    const user: User = {
+      id: this.createUserId(),
+      remoteUserId: remote.userId,
+      name: cleanName,
+      email: cleanEmail,
+      passwordHash,
+      createdAt:
+        new Date().toISOString()
+    };
+
+    this.usersState.update(
+      users => [
+        ...users,
+        user
+      ]
+    );
+
+    await this.saveUsers();
+
+    /*
+     * Después del registro dejamos
+     * la sesión iniciada automáticamente.
+     */
+    await this.saveSession(user);
+
+    return {
+      success: true,
+      message:
+        'Cuenta creada correctamente.'
+    };
+  }
+
+  async login(
+    email: string,
+    password: string
+  ): Promise<AuthResult> {
+
+    const cleanEmail =
+      email.trim().toLowerCase();
+
+    if (
+      !cleanEmail ||
+      !password
+    ) {
+      return {
+        success: false,
+        message:
+          'Ingresa correo y contraseña.'
+      };
+    }
+
+    const user =
+      this.usersState()
+        .find(
+          item =>
+            item.email === cleanEmail
+        );
+
+    if (!user) {
+      return {
+        success: false,
+        message:
+          'Correo o contraseña incorrectos.'
+      };
+    }
+
+    if (user.remoteUserId) {
+      const remote = await this.remoteAuth.signIn(cleanEmail, password);
+      if (remote.success) {
+        if (remote.userId !== user.remoteUserId) {
+          await this.remoteAuth.signOut();
+          return { success: false, message: 'La cuenta remota no corresponde al usuario local.' };
+        }
+        // A remotely changed password becomes the new offline verifier.
+        const updatedUser = { ...user, passwordHash: await this.createPasswordHash(password) };
+        this.usersState.update(users => users.map(item => item.id === user.id ? updatedUser : item));
+        await this.saveUsers();
+        await this.saveSession(updatedUser);
+        return { success: true, message: 'Sesión iniciada correctamente.' };
+      }
+      if (remote.kind !== 'connectivity') {
+        return { success: false, message: remote.message };
+      }
+    }
+
+    const passwordCorrect =
+      await this.verifyPassword(
+        password,
+        user.passwordHash
+      );
+
+    if (!passwordCorrect) {
+      return {
+        success: false,
+        message:
+          'Correo o contraseña incorrectos.'
+      };
+    }
+
+    await this.saveSession(user);
+
+    return {
+      success: true,
+      message:
+        user.remoteUserId ? 'Sesión local iniciada sin conexión.' : 'Sesión iniciada correctamente.'
+    };
+  }
+
+  async logout(): Promise<void> {
+
+    this.currentUserState.set(null);
+
+    await Preferences.remove({
+      key: this.sessionKey
+    });
+    await this.remoteAuth.signOut();
+  }
+
+  private async initialize():
+    Promise<void> {
+
+    try {
+
+      await this.loadUsers();
+
+      const {
+        value: currentUserId
+      } = await Preferences.get({
+        key: this.sessionKey
+      });
+
+      if (currentUserId) {
+
+        const user =
+          this.usersState()
+            .find(
+              item =>
+                item.id === currentUserId
+            );
+
+        this.currentUserState.set(
+          user ?? null
+        );
+
+      }
+
+    } catch (error) {
+
+      console.error(
+        'No se pudo inicializar la autenticación:',
+        error
+      );
+
+      this.currentUserState.set(null);
+
+    } finally {
+
+      this.readyState.set(true);
+
+    }
+
+  }
+
+  private async loadUsers():
+    Promise<void> {
+
+    const {
+      value
+    } = await Preferences.get({
+      key: this.usersKey
+    });
+
+    if (!value) {
+      this.usersState.set([]);
+      return;
+    }
+
+    try {
+
+      const users: unknown =
+        JSON.parse(value);
+
+      this.usersState.set(
+        Array.isArray(users)
+          ? users as User[]
+          : []
+      );
+
+    } catch {
+
+      this.usersState.set([]);
+
+    }
+
+  }
+
+  private async saveUsers():
+    Promise<void> {
+
+    await Preferences.set({
+      key: this.usersKey,
+      value:
+        JSON.stringify(
+          this.usersState()
+        )
+    });
+  }
+
+  private async saveSession(
+    user: User
+  ): Promise<void> {
+
+    this.currentUserState.set(user);
+
+    await Preferences.set({
+      key: this.sessionKey,
+      value: user.id
+    });
+  }
+
+  private isValidEmail(
+    email: string
+  ): boolean {
+
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      .test(email);
+  }
+
+  private createUserId(): string {
+
+    if (
+      typeof crypto !== 'undefined' &&
+      typeof crypto.randomUUID ===
+        'function'
+    ) {
+      return crypto.randomUUID();
+    }
+
+    return (
+      `user-${Date.now()}-` +
+      Math.random()
+        .toString(36)
+        .slice(2, 10)
+    );
+  }
+
+  /*
+   * La contraseña NO se guarda
+   * directamente.
+   *
+   * Guardamos:
+   *
+   * salt.hash
+   */
+  private async createPasswordHash(
+    password: string
+  ): Promise<string> {
+
+    const salt =
+      crypto.getRandomValues(
+        new Uint8Array(16)
+      );
+
+    const hash =
+      await this.derivePasswordHash(
+        password,
+        salt
+      );
+
+    return (
+      `${this.bytesToBase64(salt)}.` +
+      `${this.bytesToBase64(hash)}`
+    );
+  }
+
+  private async verifyPassword(
+    password: string,
+    storedValue: string
+  ): Promise<boolean> {
+
+    const parts =
+      storedValue.split('.');
+
+    if (parts.length !== 2) {
+      return false;
+    }
+
+    const salt =
+      this.base64ToBytes(
+        parts[0]
+      );
+
+    const expectedHash =
+      parts[1];
+
+    const actualHash =
+      await this.derivePasswordHash(
+        password,
+        salt
+      );
+
+    return (
+      this.bytesToBase64(
+        actualHash
+      ) === expectedHash
+    );
+  }
+
+  private async derivePasswordHash(
+    password: string,
+    salt: Uint8Array
+  ): Promise<Uint8Array> {
+
+    const encoder =
+      new TextEncoder();
+
+    const passwordKey =
+      await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(password),
+        'PBKDF2',
+        false,
+        [
+          'deriveBits'
+        ]
+      );
+
+    const derivedBits =
+      await crypto.subtle.deriveBits(
+        {
+          name: 'PBKDF2',
+          salt: new Uint8Array(salt),
+          iterations: 120000,
+          hash: 'SHA-256'
+        },
+        passwordKey,
+        256
+      );
+
+    return new Uint8Array(
+      derivedBits
+    );
+  }
+
+  private bytesToBase64(
+    bytes: Uint8Array
+  ): string {
+
+    let binary = '';
+
+    bytes.forEach(
+      byte => {
+        binary +=
+          String.fromCharCode(byte);
+      }
+    );
+
+    return btoa(binary);
+  }
+
+  private base64ToBytes(
+    value: string
+  ): Uint8Array {
+
+    const binary =
+      atob(value);
+
+    return Uint8Array.from(
+      binary,
+      character =>
+        character.charCodeAt(0)
+    );
+  }
+}

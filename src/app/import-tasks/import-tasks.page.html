@@ -1,0 +1,41 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-back-button defaultHref="/summary" text="" aria-label="Volver a Inicio"></ion-back-button></ion-buttons>
+    <ion-title>Importar tareas</ion-title>
+  </ion-toolbar>
+</ion-header>
+<ion-content>
+  <main class="workspace">
+    <section class="import-card" aria-labelledby="import-heading">
+      <span class="eyebrow">NUEVAS IDEAS PARA TU LISTA</span>
+      <h1 id="import-heading">Importar tareas</h1>
+      <p class="intro">Elige las tareas que quieras agregar a tu lista.<br><small>Fuente: JSONPlaceholder</small></p>
+      <ion-button class="refresh-button" fill="clear" [disabled]="loading() || importing() || !sessionValid" (click)="loadCandidates()">Volver a consultar</ion-button>
+      @if (loading()) {
+        <div role="status"><p class="feedback">Cargando tareas...</p><ion-progress-bar type="indeterminate" aria-label="Consultando tareas"></ion-progress-bar></div>
+      }
+      @if (error()) { <p class="feedback error-message" role="alert">{{ error() }}</p> }
+      @if (result()) { <p class="feedback success-message" role="status" aria-live="polite">{{ result() }}</p> }
+      @if (!loading() && !error() && candidates().length === 0) { <p class="feedback" role="status">No hay tareas disponibles para importar.</p> }
+      <ion-list class="candidate-list" aria-label="Tareas externas disponibles">
+        @for (candidate of candidates(); track candidate.id) {
+          <ion-item class="candidate" lines="none" [class.already-imported]="isImported(candidate.id)">
+            <ion-checkbox slot="start" [checked]="selectedIds().has(candidate.id) || isImported(candidate.id)"
+              [disabled]="importing() || isImported(candidate.id) || !sessionValid"
+              [attr.aria-label]="'Seleccionar tarea: ' + candidate.title"
+              (ionChange)="select(candidate.id, $event.detail.checked)"></ion-checkbox>
+            <div class="candidate-copy">
+              <h2>{{ candidate.title }}</h2>
+              <span class="state" [class.completed]="candidate.completed">{{ candidate.completed ? 'Completada' : 'Pendiente' }}</span>
+              @if (isImported(candidate.id)) { <span class="imported-label">Ya importada</span> }
+            </div>
+          </ion-item>
+        }
+      </ion-list>
+      <ion-button class="primary-button import-button" expand="block"
+        [disabled]="loading() || importing() || !sessionValid || selectedCount() === 0" (click)="importSelected()">
+        {{ importing() ? 'Guardando...' : 'Importar seleccionadas (' + selectedCount() + ')' }}
+      </ion-button>
+    </section>
+  </main>
+</ion-content>

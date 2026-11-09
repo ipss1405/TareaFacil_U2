@@ -1,0 +1,49 @@
+<ion-content class="login-content">
+  <main class="login-page">
+    <section class="login-layout">
+      <div class="login-mascot">
+        <img src="assets/mascota-tareafacil.png" alt="" aria-hidden="true">
+      </div>
+      <section class="login-card" aria-labelledby="login-title">
+        <div class="login-heading">
+          <span class="eyebrow">TAREAFÁCIL 2</span>
+          <h1 id="login-title">Bienvenida</h1>
+          <p>Ingresa a tu cuenta para organizar tus tareas.</p>
+        </div>
+        <div class="login-fields">
+          <div class="login-field">
+            <div class="field-icon" aria-hidden="true"><ion-icon name="mail-outline"></ion-icon></div>
+            <ion-input type="email" label="Correo" labelPlacement="stacked"
+              placeholder="correo@ejemplo.cl" autocomplete="email" [(ngModel)]="email"></ion-input>
+          </div>
+          <div class="login-field">
+            <div class="field-icon" aria-hidden="true"><ion-icon name="lock-closed-outline"></ion-icon></div>
+            <ion-input [type]="showPassword ? 'text' : 'password'" label="Contraseña" labelPlacement="stacked"
+              placeholder="Ingresa tu contraseña" autocomplete="current-password" [(ngModel)]="password">
+              <button type="button" slot="end" class="password-toggle"
+                [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+                [attr.aria-pressed]="showPassword"
+                (click)="showPassword = !showPassword">
+                <ion-icon [name]="showPassword ? 'eye-off-outline' : 'eye-outline'" aria-hidden="true"></ion-icon>
+              </button>
+            </ion-input>
+          </div>
+        </div>
+        @if (message) {
+          <p class="login-message" role="status" aria-live="polite">{{ message }}</p>
+        }
+        <ion-button class="login-button" expand="block" [disabled]="isSubmitting" (click)="login()">
+          <ion-icon slot="start" name="log-in-outline" aria-hidden="true"></ion-icon>
+          {{ isSubmitting ? 'Ingresando...' : 'Iniciar sesión' }}
+        </ion-button>
+        <div class="register-area">
+          <span>¿No tienes cuenta?</span>
+          <ion-button class="register-button" fill="clear" (click)="goToRegister()">
+            <ion-icon slot="start" name="person-add-outline" aria-hidden="true"></ion-icon>
+            Registrarse
+          </ion-button>
+        </div>
+      </section>
+    </section>
+  </main>
+</ion-content>

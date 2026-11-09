@@ -1,0 +1,422 @@
+@use "../shared/soft-ui";
+@include soft-ui.password-toggle;
+
+:host {
+  display: block;
+}
+
+.register-content {
+  --background:
+    linear-gradient(
+      145deg,
+      #f7f4ff 0%,
+      #fff8fb 52%,
+      #f4fbf8 100%
+    );
+}
+
+.register-page {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+
+  padding:
+    28px 20px
+    calc(28px + env(safe-area-inset-bottom));
+}
+
+.register-layout {
+  width: min(100%, 430px);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  gap: 10px;
+}
+
+/* ------------------------------
+   MASCOTA
+------------------------------ */
+
+.register-mascot {
+  position: relative;
+
+  width: 180px;
+  height: 170px;
+
+  display: grid;
+  place-items: center;
+
+  z-index: 2;
+}
+
+.register-mascot::before {
+  content: "";
+
+  position: absolute;
+
+  width: 145px;
+  height: 145px;
+
+  border-radius: 50%;
+
+  background:
+    linear-gradient(
+      145deg,
+      #eee7ff,
+      #fff8fb
+    );
+
+  box-shadow:
+    10px 10px 24px rgba(82, 63, 142, .11),
+    -8px -8px 20px rgba(255, 255, 255, .92);
+
+  z-index: -1;
+}
+
+.register-mascot img {
+  display: block;
+
+  width: 155px;
+  height: 155px;
+
+  object-fit: contain;
+
+  filter:
+    drop-shadow(
+      0 9px 9px rgba(89, 66, 145, .12)
+    );
+}
+
+/* ------------------------------
+   TARJETA LOGIN
+------------------------------ */
+
+.register-card {
+  width: 100%;
+
+  padding: 26px 24px 22px;
+
+  border: 1px solid rgba(255, 255, 255, .95);
+  border-radius: 28px;
+
+  background:
+    rgba(255, 255, 255, .84);
+
+  box-shadow:
+    12px 14px 30px rgba(73, 58, 127, .11),
+    -8px -8px 22px rgba(255, 255, 255, .94);
+
+  backdrop-filter: blur(8px);
+}
+
+.register-heading {
+  text-align: center;
+
+  margin-bottom: 24px;
+}
+
+.eyebrow {
+  display: inline-block;
+
+  margin-bottom: 6px;
+
+  color: #7259aa;
+
+  font-size: 11px;
+  font-weight: 750;
+
+  letter-spacing: 1.15px;
+
+  text-transform: uppercase;
+}
+
+.register-heading h1 {
+  margin: 0;
+
+  color: #29233a;
+
+  font-size: 29px;
+  font-weight: 800;
+
+  line-height: 1.15;
+}
+
+.register-heading p {
+  max-width: 290px;
+
+  margin:
+    10px auto 0;
+
+  color: #6c6579;
+
+  font-size: 13px;
+
+  line-height: 1.55;
+}
+
+/* ------------------------------
+   CAMPOS
+------------------------------ */
+
+.register-fields {
+  display: grid;
+
+  gap: 14px;
+}
+
+.register-field {
+  position: relative;
+
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+
+  min-height: 70px;
+
+  padding:
+    5px 13px 5px 10px;
+
+  border: 1px solid #ebe5f5;
+  border-radius: 18px;
+
+  background: #f8f6fc;
+
+  box-shadow:
+    inset 3px 3px 7px rgba(84, 65, 138, .055),
+    inset -3px -3px 8px rgba(255, 255, 255, .95);
+}
+
+.register-field:focus-within {
+  border-color: #9a82cd;
+
+  outline: 2px solid rgba(121, 95, 181, .16);
+  outline-offset: 2px;
+}
+
+.field-icon {
+  width: 36px;
+  height: 36px;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 12px;
+
+  color: #765dad;
+
+  background: #eee9fa;
+
+  box-shadow:
+    3px 3px 7px rgba(82, 63, 142, .07),
+    -3px -3px 7px rgba(255, 255, 255, .88);
+}
+
+.field-icon ion-icon {
+  font-size: 19px;
+}
+
+.register-field ion-input {
+  --color: #29233a;
+  --placeholder-color: #938ca0;
+
+  min-width: 0;
+
+  font-size: 14px;
+}
+
+/* ------------------------------
+   MENSAJES
+------------------------------ */
+
+.register-message {
+  margin:
+    15px 4px 0;
+
+  padding: 10px 12px;
+
+  border-radius: 13px;
+
+  background: #f4effc;
+
+  color: #65527d;
+
+  font-size: 12px;
+  font-weight: 600;
+
+  line-height: 1.45;
+
+  text-align: center;
+}
+
+/* ------------------------------
+   BOTÓN LOGIN
+------------------------------ */
+
+.register-button {
+  --background:
+    linear-gradient(
+      135deg,
+      #8062bb,
+      #6b4fa5
+    );
+
+  --background-hover: #7557ad;
+  --background-activated: #68499e;
+
+  --color: white;
+
+  --border-radius: 17px;
+
+  --box-shadow:
+    7px 8px 17px rgba(83, 61, 142, .22);
+
+  min-height: 50px;
+
+  margin-top: 20px;
+
+  font-size: 14px;
+  font-weight: 700;
+
+  text-transform: none;
+}
+
+.register-button:focus-visible {
+  outline: 3px solid rgba(111, 82, 168, .3);
+  outline-offset: 3px;
+}
+
+/* ------------------------------
+   REGISTRO
+------------------------------ */
+
+.login-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+
+  gap: 1px;
+
+  margin-top: 15px;
+
+  color: #777080;
+
+  font-size: 13px;
+}
+
+.login-link {
+  --color: #7357aa;
+
+  --padding-start: 7px;
+  --padding-end: 7px;
+
+  min-height: 42px;
+
+  font-size: 13px;
+  font-weight: 700;
+
+  text-transform: none;
+}
+
+.login-link::part(native) {
+  border-radius: 12px;
+}
+
+/* ------------------------------
+   RESPONSIVE
+------------------------------ */
+
+@media (max-width: 480px) {
+
+  .register-page {
+    padding:
+      20px 16px
+      calc(24px + env(safe-area-inset-bottom));
+  }
+
+  .register-layout {
+    gap: 5px;
+  }
+
+  .register-mascot {
+    width: 155px;
+    height: 145px;
+  }
+
+  .register-mascot::before {
+    width: 125px;
+    height: 125px;
+  }
+
+  .register-mascot img {
+    width: 138px;
+    height: 138px;
+  }
+
+  .register-card {
+    padding:
+      23px 18px 19px;
+
+    border-radius: 25px;
+  }
+
+  .register-heading {
+    margin-bottom: 20px;
+  }
+
+  .register-heading h1 {
+    font-size: 26px;
+  }
+
+  .register-field {
+    min-height: 66px;
+  }
+
+}
+
+@media (max-width: 360px) {
+
+  .register-page {
+    padding-inline: 12px;
+  }
+
+  .register-mascot {
+    width: 140px;
+    height: 130px;
+  }
+
+  .register-mascot::before {
+    width: 112px;
+    height: 112px;
+  }
+
+  .register-mascot img {
+    width: 124px;
+    height: 124px;
+  }
+
+  .register-card {
+    padding:
+      20px 14px 17px;
+  }
+
+  .register-heading h1 {
+    font-size: 24px;
+  }
+
+}
+
+/* ------------------------------
+   REDUCIR ANIMACIONES
+------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+
+  .register-button::part(native),
+  .login-link::part(native) {
+    transition: none;
+  }
+
+}
