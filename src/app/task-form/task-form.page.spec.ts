@@ -2,7 +2,7 @@ import { createTaskTestContext } from '../testing/task-test-context';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { NavController } from '@ionic/angular';
-import { Camera, MediaType } from '@capacitor/camera';
+import { Camera, MediaType, MediaTypeSelection } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Geolocation, Position } from '@capacitor/geolocation';
@@ -14,7 +14,7 @@ import { TaskService } from '../task.service';
 
 vi.mock('@capacitor/camera', async importOriginal => {
   const actual = await importOriginal<typeof import('@capacitor/camera')>();
-  return { ...actual, Camera: { takePhoto: vi.fn() } };
+  return { ...actual, Camera: { takePhoto: vi.fn(), chooseFromGallery: vi.fn() } };
 });
 
 vi.mock('@capacitor/filesystem', async importOriginal => {
@@ -297,6 +297,7 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
     vi.spyOn(Capacitor, 'getPlatform').mockReturnValue('web');
     files = new Map();
     vi.mocked(Camera.takePhoto).mockResolvedValue(capturedPhoto);
+    vi.mocked(Camera.chooseFromGallery).mockResolvedValue({ results: [capturedPhoto] });
     vi.mocked(Filesystem.writeFile).mockImplementation(async ({ path, data, directory }) => {
       expect(directory).toBe(Directory.Data);
       if (typeof data !== 'string') throw new Error('Expected base64 bytes');
@@ -323,6 +324,7 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
   describe('Camera', () => {
     it('captures with the exact current options and persists full bytes before exposing a permanent path', async () => {
       await page.takePhoto();
+      expect(Camera.chooseFromGallery).not.toHaveBeenCalled();
       expect(Camera.takePhoto).toHaveBeenCalledExactlyOnceWith({
         quality: 85, correctOrientation: true, saveToGallery: false, includeMetadata: true
       });
@@ -535,6 +537,168 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
       expect(files.get(task.photoPath!)).toBe(photoBytes);
       expect(page.isTakingPhoto).toBe(false);
     });
+  });
+
+  describe('single image gallery selection', () => {
+    it('selects only one photo, persists full bytes and associates the image on creation', async () => {
+      await page.chooseImage();
+      expect(Camera.chooseFromGallery).toHaveBeenCalledExactlyOnceWith({ mediaType: MediaTypeSelection.Photo,
+        allowMultipleSelection: false, quality: 85, includeMetadata: true });
+      expect(Camera.takePhoto).not.toHaveBeenCalled();
+      const path = page.photoPath;
+      expect(path).toMatch(/^task-photos\/.+\.png$/);
+      expect(files.get(path)).toBe(photoBytes);
+      expect(page.photoPreviewUrl).toBe(photoPreview);
+      await page.saveTask();
+      expect((await persisted(tasks.tasks().at(-1)!.id)).photoPath).toBe(path);
+    });
+
+    it('replaces an existing photo on edit without removing old physical files', async () => {
+      const task = await editWithPhoto();
+      await page.chooseImage(); const path = page.photoPath;
+      expect(path).not.toBe(task.photoPath);
+      await page.saveTask();
+      expect((await persisted(task.id)).photoPath).toBe(path);
+      expect(files.has(task.photoPath!)).toBe(true);
+      expect(Filesystem.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it('copies a native gallery URI to the permanent directory before previewing it', async () => {
+      vi.mocked(Capacitor.getPlatform).mockReturnValue('android');
+      files.set('content://gallery/photo', photoBytes);
+      vi.mocked(Camera.chooseFromGallery).mockResolvedValueOnce({ results: [
+        { type: MediaType.Photo, saved: false, uri: 'content://gallery/photo', metadata: { format: 'png' } }
+      ] });
+      await page.chooseImage();
+      expect(Filesystem.readFile).toHaveBeenCalledWith({ path: 'content://gallery/photo' });
+      expect(Filesystem.getUri).toHaveBeenCalledWith({ path: page.photoPath, directory: Directory.Data });
+      expect(files.get(page.photoPath)).toBe(photoBytes);
+    });
+
+    it.each([
+      { code: 'OS-PLUG-CAMR-0020', text: 'cancelada' },
+      { code: 'OS-PLUG-CAMR-0005', text: 'rechazado' },
+      { code: 'OS-PLUG-CAMR-0018', text: 'No se pudo guardar' }
+    ])('handles gallery error $code without replacing the existing photo', async ({ code, text }) => {
+      const task = await editWithPhoto();
+      vi.mocked(Camera.chooseFromGallery).mockRejectedValueOnce({ code });
+      await page.chooseImage();
+      expect(page.cameraMessage).toContain(text);
+      expect(page.photoPath).toBe(task.photoPath);
+      expect(page.photoPreviewUrl).toBe(photoPreview);
+      expect(Filesystem.writeFile).not.toHaveBeenCalled();
+      expect(page.isTakingPhoto).toBe(false);
+    });
+
+    it.each(['AbortError', 'NotAllowedError'])('handles web gallery %s safely', async name => {
+      const task = await editWithPhoto();
+      vi.mocked(Camera.chooseFromGallery).mockRejectedValueOnce(new DOMException('Selection failed', name));
+      await page.chooseImage();
+      expect(page.cameraMessage).toContain(name === 'AbortError' ? 'cancelada' : 'rechazado');
+      expect(page.photoPath).toBe(task.photoPath);
+    });
+
+    it.each(['empty', 'missing', 'multiple', 'video'])('rejects a %s selection without touching the previous image', async kind => {
+      const task = await editWithPhoto();
+      const result = kind === 'missing' ? {} : { results: kind === 'empty' ? [] : kind === 'multiple'
+        ? [capturedPhoto, capturedPhoto] : [{ ...capturedPhoto, type: MediaType.Video }] };
+      vi.mocked(Camera.chooseFromGallery).mockResolvedValueOnce(result as Awaited<ReturnType<typeof Camera.chooseFromGallery>>);
+      await page.chooseImage();
+      expect(page.cameraMessage).toContain('No se seleccion');
+      expect(page.photoPath).toBe(task.photoPath);
+      expect(page.photoPreviewUrl).toBe(photoPreview);
+      expect(Filesystem.writeFile).not.toHaveBeenCalled();
+    });
+
+    it.each(['read', 'write', 'preview'])('preserves the previous photo if gallery %s fails', async phase => {
+      const task = await editWithPhoto();
+      if (phase === 'read') {
+        vi.mocked(Capacitor.getPlatform).mockReturnValue('android');
+        vi.mocked(Camera.chooseFromGallery).mockResolvedValueOnce({ results: [
+          { type: MediaType.Photo, saved: false, uri: 'content://unreadable', metadata: { format: 'png' } }
+        ] });
+        vi.mocked(Filesystem.readFile).mockRejectedValueOnce(new Error('Read failed'));
+      } else if (phase === 'write') vi.mocked(Filesystem.writeFile).mockRejectedValueOnce(new Error('Write failed'));
+      else vi.mocked(Filesystem.readFile).mockRejectedValueOnce(new Error('Preview failed'));
+      await page.chooseImage();
+      expect(page.cameraMessage).toContain('No se pudo guardar');
+      expect(page.photoPath).toBe(task.photoPath);
+      expect(page.photoPreviewUrl).toBe(photoPreview);
+      expect(page.isTakingPhoto).toBe(false);
+      await page.saveTask(); expect(tasks.getTask(task.id)?.photoPath).toBe(task.photoPath);
+    });
+
+    it.each(['camera', 'gallery'])('blocks both photo actions and saving while %s is running', async source => {
+      const task = await editWithPhoto();
+      let finish!: () => void;
+      if (source === 'camera') vi.mocked(Camera.takePhoto).mockImplementationOnce(() => new Promise(resolve => { finish = () => resolve(capturedPhoto); }));
+      else vi.mocked(Camera.chooseFromGallery).mockImplementationOnce(() => new Promise(resolve => { finish = () => resolve({ results: [capturedPhoto] }); }));
+      const pending = source === 'camera' ? page.takePhoto() : page.chooseImage();
+      await page.takePhoto(); await page.chooseImage(); await page.saveTask(); page.removePhoto();
+      expect(Camera.takePhoto).toHaveBeenCalledTimes(source === 'camera' ? 1 : 0);
+      expect(Camera.chooseFromGallery).toHaveBeenCalledTimes(source === 'gallery' ? 1 : 0);
+      expect(page.photoPath).toBe(task.photoPath);
+      expect(navigateBack).not.toHaveBeenCalled();
+      finish(); await pending; expect(page.photoPath).not.toBe(task.photoPath);
+    });
+
+    it.each(['leave', 'logout', 'switch', 'new-session'])('ignores gallery results after %s', async action => {
+      const task = await editWithPhoto();
+      let finish!: () => void;
+      vi.mocked(Camera.chooseFromGallery).mockImplementationOnce(() => new Promise(resolve => { finish = () => resolve({ results: [capturedPhoto] }); }));
+      const pending = page.chooseImage();
+      if (action === 'leave') page.ionViewWillLeave();
+      else if (action === 'logout') context.currentUser.set(null);
+      else if (action === 'switch') context.currentUser.set(context.userB);
+      else context.currentUser.set({ ...context.userA });
+      TestBed.tick(); finish(); await pending;
+      expect(page.photoPath).toBe(task.photoPath);
+      expect(page.photoPreviewUrl).toBe(photoPreview);
+      expect(Filesystem.writeFile).not.toHaveBeenCalled();
+    });
+
+    it('shows three peer resource actions and disables photography and saving while processing', () => {
+      const fixture = TestBed.createComponent(TaskFormPage);
+      const camera = vi.spyOn(fixture.componentInstance, 'takePhoto').mockResolvedValue(undefined);
+      const gallery = vi.spyOn(fixture.componentInstance, 'chooseImage').mockResolvedValue(undefined);
+      const location = vi.spyOn(fixture.componentInstance, 'getCurrentLocation').mockResolvedValue(true);
+      fixture.detectChanges();
+      const root: HTMLElement = fixture.nativeElement;
+      expect(root.querySelectorAll('.resources-grid > button.resource-card')).toHaveLength(3);
+      expect(root.querySelector('.photo-resource strong')?.textContent).toContain('Fotograf');
+      root.querySelector<HTMLElement>('.location-resource')!.click();
+      expect(location).toHaveBeenCalledTimes(1);
+      expect(root.querySelector('.photo-preview')).toBeNull();
+      root.querySelector<HTMLElement>('.photo-camera')!.click();
+      root.querySelector<HTMLElement>('.photo-gallery')!.click();
+      expect(camera).toHaveBeenCalledTimes(1); expect(gallery).toHaveBeenCalledTimes(1);
+      fixture.componentInstance.isTakingPhoto = true;
+      fixture.changeDetectorRef.markForCheck(); fixture.detectChanges();
+      for (const selector of ['.photo-camera', '.photo-gallery', '.primary-button']) {
+        expect((root.querySelector(selector) as HTMLElement & { disabled: boolean }).disabled).toBe(true);
+      }
+    });
+  });
+
+  it('keeps the single image preview and removal below the three resource drawers', () => {
+    const fixture = TestBed.createComponent(TaskFormPage);
+    const component = fixture.componentInstance;
+    component.photoPath = 'task-photos/existing.png';
+    component.photoPreviewUrl = photoPreview;
+    const remove = vi.spyOn(component, 'removePhoto');
+    fixture.detectChanges();
+    const root: HTMLElement = fixture.nativeElement;
+    const grid = root.querySelector('.resources-grid')!;
+    const preview = root.querySelector('.photo-preview')!;
+    expect(grid.querySelectorAll('.resource-card')).toHaveLength(3);
+    expect(grid.contains(preview)).toBe(false);
+    expect(grid.nextElementSibling).toBe(preview);
+    expect(preview.querySelector('img')?.getAttribute('src')).toBe(photoPreview);
+    preview.querySelector<HTMLElement>('.photo-remove')!.click();
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(component.photoPath).toBe('');
+    fixture.changeDetectorRef.markForCheck(); fixture.detectChanges();
+    expect(root.querySelector('.photo-preview')).toBeNull();
   });
 
   describe('GPS', () => {

@@ -31,7 +31,7 @@ import {
 } from '@ionic/angular';
 
 import {
-  Camera
+  Camera, MediaType, MediaTypeSelection
 } from '@capacitor/camera';
 
 import {
@@ -57,6 +57,8 @@ import {
   checkmarkOutline,
   closeOutline,
   cameraOutline,
+  imageOutline,
+  trashOutline,
   locationOutline
 } from 'ionicons/icons';
 
@@ -283,6 +285,8 @@ export class TaskFormPage implements OnDestroy {
       checkmarkOutline,
       closeOutline,
       cameraOutline,
+      imageOutline,
+      trashOutline,
       locationOutline
     });
 
@@ -413,7 +417,11 @@ export class TaskFormPage implements OnDestroy {
     this.changeDetector.markForCheck();
   }
 
-  async takePhoto() {
+  takePhoto() { return this.processPhoto('camera'); }
+
+  chooseImage() { return this.processPhoto('gallery'); }
+
+  private async processPhoto(source: 'camera' | 'gallery') {
     if (this.isTakingPhoto || this.isSaving || !this.active || !this.auth.isReady()) return;
     const user = this.auth.currentUser();
     if (!user) return;
@@ -424,9 +432,22 @@ export class TaskFormPage implements OnDestroy {
     this.cameraMessage = '';
     this.isTakingPhoto = true;
     try {
-      const photo = await Camera.takePhoto({
-        quality: 85, correctOrientation: true, saveToGallery: false, includeMetadata: true
-      });
+      let photo: Awaited<ReturnType<typeof Camera.takePhoto>>;
+      if (source === 'camera') {
+        photo = await Camera.takePhoto({
+          quality: 85, correctOrientation: true, saveToGallery: false, includeMetadata: true
+        });
+      } else {
+        const selection = await Camera.chooseFromGallery({
+          mediaType: MediaTypeSelection.Photo, allowMultipleSelection: false,
+          quality: 85, includeMetadata: true
+        });
+        if (!valid()) return;
+        if (!Array.isArray(selection?.results) || selection.results.length !== 1 || selection.results[0]?.type !== MediaType.Photo) {
+          throw Object.assign(new Error('No valid single image selected'), { code: 'EMPTY_IMAGE_SELECTION' });
+        }
+        photo = selection.results[0];
+      }
       if (!valid()) return;
       const savedPath = await this.savePhotoLocally(photo);
       if (!valid()) return;
@@ -438,14 +459,20 @@ export class TaskFormPage implements OnDestroy {
       this.photoPath = savedPath;
       this.photoPreviewUrl = pendingPreview;
       pendingPreview = '';
-      this.cameraMessage = 'Fotografía guardada correctamente.';
+      this.cameraMessage = source === 'camera' ? 'Fotografía guardada correctamente.' : 'Imagen elegida y guardada correctamente.';
     } catch (error) {
       if (!valid()) return;
       const { code, name, message } = (error ?? {}) as { code?: string; name?: string; message?: string };
-      if (code === 'OS-PLUG-CAMR-0003' || name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-        this.cameraMessage = 'Permiso de cámara rechazado. Puedes habilitarlo en los ajustes y reintentar.';
-      } else if (code === 'OS-PLUG-CAMR-0006' || name === 'AbortError' || message === 'User cancelled photos app') {
-        this.cameraMessage = 'Captura cancelada. Se conserva la fotografía anterior, si existe.';
+      if (code === 'OS-PLUG-CAMR-0003' || code === 'OS-PLUG-CAMR-0005' || name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        this.cameraMessage = source === 'camera'
+          ? 'Permiso de cámara rechazado. Puedes habilitarlo en los ajustes y reintentar.'
+          : 'Permiso para acceder a imágenes rechazado. Puedes habilitarlo en los ajustes y reintentar.';
+      } else if (code === 'OS-PLUG-CAMR-0006' || code === 'OS-PLUG-CAMR-0020' || name === 'AbortError' || message === 'User cancelled photos app') {
+        this.cameraMessage = source === 'camera'
+          ? 'Captura cancelada. Se conserva la fotografía anterior, si existe.'
+          : 'Selección cancelada. Se conserva la fotografía anterior, si existe.';
+      } else if (code === 'EMPTY_IMAGE_SELECTION') {
+        this.cameraMessage = 'No se seleccionó una imagen válida. Se conserva la fotografía anterior, si existe.';
       } else {
         console.error('No se pudo obtener o guardar la fotografía:', error);
         this.cameraMessage = 'No se pudo guardar la fotografía. Ocurrió un error de captura, lectura o almacenamiento.';

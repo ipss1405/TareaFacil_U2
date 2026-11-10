@@ -197,49 +197,46 @@
       <section class="resources-section" aria-labelledby="resources-heading">
         <h3 id="resources-heading">Recursos de la tarea</h3>
         <div class="resources-grid">
-          <div class="resource-card location-resource" [class.is-attached]="hasLocation">
-            <button type="button" class="resource-trigger" [disabled]="isGettingLocation || isSaving"
-              [attr.aria-busy]="isGettingLocation" aria-describedby="location-feedback"
-              [attr.aria-label]="hasLocation ? 'Actualizar ubicación registrada' : 'Obtener ubicación'"
-              (click)="getCurrentLocation()">
-              <span class="resource-symbol" aria-hidden="true"><ion-icon name="location-outline"></ion-icon></span>
-              <strong>Ubicación</strong>
-              <span class="resource-state">{{ isGettingLocation ? 'Obteniendo...' : hasLocation ? 'Registrada' : 'No registrada' }} @if (hasLocation && !isGettingLocation) { <span aria-hidden="true">✓</span> }</span>
-              @if (hasLocation && accuracy !== undefined) {
-                <span class="resource-detail">Precisión: {{ accuracy.toFixed(1) }} m</span>
-              }
-            </button>
-            @if (hasLocation) {
-              <div class="resource-actions">
-                <ion-button class="resource-update" fill="clear" [disabled]="isGettingLocation || isSaving" (click)="getCurrentLocation()" aria-label="Actualizar ubicación">Actualizar</ion-button>
-                <ion-button class="resource-remove" fill="clear" (click)="removeLocation()" aria-label="Quitar ubicación" title="Quitar ubicación"><ion-icon slot="icon-only" name="close-outline" aria-hidden="true"></ion-icon></ion-button>
-              </div>
-            }
-          </div>
-          <div class="resource-card photo-resource" [class.is-attached]="!!photoPath">
-            <button type="button" class="resource-trigger" [disabled]="isTakingPhoto || isSaving"
-              [attr.aria-busy]="isTakingPhoto" aria-describedby="camera-feedback"
-              [attr.aria-label]="photoPath ? 'Cambiar fotografía adjunta' : 'Tomar fotografía'"
-              (click)="takePhoto()">
-              @if (photoPath) {
-                <img
-                  class="resource-thumbnail"
-                  [src]="photoPreviewUrl"
-                  alt="Vista previa de la fotografía adjunta" />
-              } @else {
-                <span class="resource-symbol" aria-hidden="true"><ion-icon name="camera-outline"></ion-icon></span>
-              }
-              <strong>Fotografía</strong>
-              <span class="resource-state">{{ isTakingPhoto ? 'Abriendo...' : photoPath ? 'Adjunta' : 'Sin fotografía' }} @if (photoPath && !isTakingPhoto) { <span aria-hidden="true">✓</span> }</span>
-            </button>
-            @if (photoPath) {
-              <div class="resource-actions">
-                <ion-button class="resource-update" fill="clear" [disabled]="isTakingPhoto || isSaving" (click)="takePhoto()" aria-label="Cambiar fotografía">Cambiar</ion-button>
-                <ion-button class="resource-remove" fill="clear" [disabled]="isTakingPhoto || isSaving" (click)="removePhoto()" aria-label="Quitar fotografía" title="Quitar fotografía"><ion-icon slot="icon-only" name="close-outline" aria-hidden="true"></ion-icon></ion-button>
-              </div>
-            }
-          </div>
+          <button type="button" class="resource-card resource-trigger location-resource" [class.is-attached]="hasLocation"
+            [disabled]="isGettingLocation || isSaving" [attr.aria-busy]="isGettingLocation"
+            aria-describedby="location-feedback" [attr.aria-label]="hasLocation ? 'Actualizar ubicación registrada' : 'Obtener ubicación'"
+            (click)="getCurrentLocation()">
+            <span class="resource-symbol" aria-hidden="true"><ion-icon name="location-outline"></ion-icon></span>
+            <strong>Ubicación</strong>
+            <span class="resource-state">{{ isGettingLocation ? 'Obteniendo...' : hasLocation ? 'Registrada' : 'No registrada' }}</span>
+          </button>
+          <button type="button" class="resource-card resource-trigger photo-resource photo-camera" [class.is-attached]="!!photoPath"
+            [disabled]="isTakingPhoto || isSaving" [attr.aria-busy]="isTakingPhoto"
+            aria-describedby="camera-feedback" aria-label="Tomar foto" (click)="takePhoto()">
+            <span class="resource-symbol" aria-hidden="true"><ion-icon name="camera-outline"></ion-icon></span>
+            <strong>Fotografía</strong>
+            <span class="resource-state">{{ isTakingPhoto ? 'Procesando...' : photoPath ? 'Registrada' : 'Tomar foto' }}</span>
+          </button>
+          <button type="button" class="resource-card resource-trigger gallery-resource photo-gallery" [class.is-attached]="!!photoPath"
+            [disabled]="isTakingPhoto || isSaving" [attr.aria-busy]="isTakingPhoto"
+            aria-describedby="camera-feedback" aria-label="Elegir imagen" (click)="chooseImage()">
+            <span class="resource-symbol" aria-hidden="true"><ion-icon name="image-outline"></ion-icon></span>
+            <strong>Galería</strong>
+            <span class="resource-state">{{ isTakingPhoto ? 'Procesando...' : 'Elegir imagen' }}</span>
+          </button>
         </div>
+        @if (hasLocation) {
+          <div class="location-details">
+            @if (accuracy !== undefined) { <span class="resource-detail">Precisión: {{ accuracy.toFixed(1) }} m</span> }
+            <div class="resource-actions">
+              <ion-button class="resource-update" fill="clear" [disabled]="isGettingLocation || isSaving" (click)="getCurrentLocation()" aria-label="Actualizar ubicación">Actualizar</ion-button>
+              <ion-button class="resource-remove" fill="clear" (click)="removeLocation()" aria-label="Quitar ubicación" title="Quitar ubicación"><ion-icon slot="icon-only" name="close-outline" aria-hidden="true"></ion-icon></ion-button>
+            </div>
+          </div>
+        }
+        @if (photoPath) {
+          <div class="photo-preview">
+            <img class="resource-thumbnail" [src]="photoPreviewUrl" alt="Vista previa de la fotografía adjunta" />
+            <ion-button class="photo-remove" fill="clear" [disabled]="isTakingPhoto || isSaving" (click)="removePhoto()" aria-label="Quitar imagen">
+              <ion-icon slot="start" name="trash-outline" aria-hidden="true"></ion-icon>Quitar imagen
+            </ion-button>
+          </div>
+        }
         <p id="location-feedback" class="resource-message" role="status" aria-live="polite">{{ locationMessage }}</p>
         <p id="camera-feedback" class="resource-message" role="status" aria-live="polite">{{ cameraMessage }}</p>
       </section>
