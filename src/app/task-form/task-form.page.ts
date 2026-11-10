@@ -91,6 +91,7 @@ export class TaskFormPage implements OnDestroy {
   private generation = 0;
   private locationRequest?: Promise<boolean>;
   isSaving = false;
+  storageMessage = '';
   awaitingLocationDecision = false;
   private locationDecisionUser?: ReturnType<AuthService['currentUser']>;
 
@@ -543,6 +544,7 @@ export class TaskFormPage implements OnDestroy {
     if (this.isSaving || this.isTakingPhoto || !this.active || !this.auth.isReady() || !this.auth.currentUser()) return;
     if (continueWithoutLocation && (!this.awaitingLocationDecision || this.auth.currentUser() !== this.locationDecisionUser)) return;
 
+    this.storageMessage = '';
     this.validationAttempted = true;
 
     this.formControls()
@@ -585,8 +587,9 @@ export class TaskFormPage implements OnDestroy {
         this.selectedSchedule
           ?.toISOString() ?? '';
 
-      const saved =
-        this.editingId === null
+      const saved = await this.taskService.persistLocalChange(() => {
+        if (!this.active || generation !== this.generation || this.auth.currentUser() !== user) return false;
+        return this.editingId === null
 
           ? this.taskService.addTask(
               this.newTitle,
@@ -609,6 +612,9 @@ export class TaskFormPage implements OnDestroy {
               this.accuracy,
               this.locationRemoved
             );
+      });
+
+      if (!this.active || generation !== this.generation || this.auth.currentUser() !== user) return;
 
       if (saved) {
 
@@ -623,6 +629,10 @@ export class TaskFormPage implements OnDestroy {
 
       }
 
+    } catch {
+      if (this.active && generation === this.generation && this.auth.currentUser() === user) {
+        this.storageMessage = 'No se pudo guardar la tarea en el dispositivo. Tus datos siguen en el formulario; vuelve a intentarlo.';
+      }
     } finally {
       this.isSaving = false;
       this.changeDetector.markForCheck();
@@ -889,6 +899,7 @@ export class TaskFormPage implements OnDestroy {
 
     this.revokePhotoPreview();
 
+    this.storageMessage = '';
     this.validationAttempted =
       false;
 

@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { Preferences } from '@capacitor/preferences';
 import { createTaskTestContext } from '../testing/task-test-context';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
@@ -9,6 +10,9 @@ import { TaskService } from '../task.service';
 vi.mock('@capacitor/preferences', () => ({ Preferences: { get: vi.fn(), set: vi.fn() } }));
 
 describe('TasksPage weekly agenda', () => {
+  afterEach(async () => {
+    await TestBed.inject(TaskService).persistLocalChange(() => undefined);
+  });
   beforeEach(async () => {
     const context = createTaskTestContext();
     await TestBed.configureTestingModule({ imports: [TasksPage], providers: [provideRouter([]), ...context.providers] }).compileComponents();
@@ -132,4 +136,22 @@ describe('TasksPage weekly agenda', () => {
     expect(buttons[0].querySelector('strong').textContent).toBe(fixture.componentInstance.weekDays[0].number);
     expect(buttons[0].getAttribute('aria-label')).toBeTruthy();
   });
+  it.each(['complete', 'delete'])('shows an accessible error and restores the task after failed %s', async action => {
+    const fixture = TestBed.createComponent(TasksPage);
+    const page = fixture.componentInstance;
+    const service = TestBed.inject(TaskService);
+    const task = service.tasks()[0];
+    vi.mocked(Preferences.set).mockRejectedValueOnce(new Error('Full disk'));
+    if (action === 'complete') await page.toggleTask(task); else await page.deleteTask(task.id);
+    expect(service.getTask(task.id)).toEqual(task);
+    expect(page.storageMessage).toContain('No se pudo guardar');
+    expect(page.isPersisting).toBe(false);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain('No se pudo guardar');
+    if (action === 'complete') await page.toggleTask(task); else await page.deleteTask(task.id);
+    expect(page.storageMessage).toBe('');
+    if (action === 'complete') expect(service.getTask(task.id)?.completed).toBe(true);
+    else expect(service.getTask(task.id)).toBeUndefined();
+  });
+
 });

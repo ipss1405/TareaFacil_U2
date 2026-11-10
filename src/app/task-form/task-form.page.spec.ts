@@ -674,6 +674,46 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
       expect(tasks.getTask(task.id)?.accuracy).toBeUndefined();
     });
   });
+  describe('confirmed local storage', () => {
+    it('keeps the form open until Preferences confirms creation', async () => {
+      let finish!: () => void;
+      const original = vi.mocked(Preferences.set).getMockImplementation()!;
+      vi.mocked(Preferences.set).mockImplementationOnce(async options => {
+        await new Promise<void>(resolve => { finish = resolve; }); await original(options);
+      });
+      const pending = page.saveTask();
+      await vi.waitFor(() => expect(finish).toBeDefined());
+      expect(navigateBack).not.toHaveBeenCalled();
+      expect(page.newTitle).toBe('Tarea de prueba');
+      expect(page.isSaving).toBe(true);
+      finish(); await pending;
+      expect(navigateBack).toHaveBeenCalledTimes(1);
+      expect(page.newTitle).toBe('');
+    });
+
+    it.each(['create', 'edit'])('keeps input, photo and schedule after failed %s and allows retry', async kind => {
+      let task: Task | undefined;
+      if (kind === 'edit') task = await editWithPhoto();
+      page.newTitle = 'Datos importantes'; page.newDescription = 'No perder';
+      page.photoPath = 'task-photos/original.png';
+      page.scheduledDate = '2026-11-10'; page.scheduledTime = '15:30';
+      const count = tasks.totalTasks();
+      vi.mocked(Preferences.set).mockRejectedValueOnce(new Error('Full disk'));
+      await page.saveTask();
+      expect(navigateBack).not.toHaveBeenCalled();
+      expect(page.storageMessage).toContain('No se pudo guardar');
+      expect(page.newTitle).toBe('Datos importantes');
+      expect(page.newDescription).toBe('No perder');
+      expect(page.photoPath).toBe('task-photos/original.png');
+      expect(page.scheduledTime).toBe('15:30');
+      expect(tasks.totalTasks()).toBe(count);
+      if (task) expect(tasks.getTask(task.id)).toEqual(task);
+      await page.saveTask();
+      expect(navigateBack).toHaveBeenCalledTimes(1);
+      expect(tasks.totalTasks()).toBe(count + (kind === 'create' ? 1 : 0));
+    });
+  });
+
   describe('automatic GPS on creation', () => {
     it('waits for GPS, avoids double submit and preserves photo, schedule and owner', async () => {
       let finish!: (value: Position) => void;

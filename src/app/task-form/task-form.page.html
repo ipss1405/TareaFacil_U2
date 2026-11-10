@@ -251,6 +251,10 @@
         </div>
       }
 
+      @if (storageMessage) {
+        <p class="resource-message" role="alert">{{ storageMessage }}</p>
+      }
+
       <!-- ACCIONES -->
 
       <div class="form-actions">

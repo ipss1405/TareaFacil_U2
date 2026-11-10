@@ -65,6 +65,8 @@ export class TasksPage {
   private readonly alertController = inject(AlertController);
 
   searchQuery = '';
+  storageMessage = '';
+  isPersisting = false;
 
   statusFilter: 'all' | 'pending' | 'completed' = 'all';
 
@@ -260,13 +262,27 @@ export class TasksPage {
     }
   }
 
-  toggleTask(task: Task) {
-    this.taskService.toggleTask(task.id);
+  async toggleTask(task: Task) {
+    await this.persistChange(() => this.taskService.toggleTask(task.id), () => this.resetInvalidPage());
+  }
 
-    this.resetInvalidPage();
+  private async persistChange(change: () => void, saved: () => void) {
+    if (this.isPersisting) return;
+    this.isPersisting = true;
+    this.storageMessage = '';
+    try {
+      await this.taskService.persistLocalChange(change);
+      saved();
+    } catch {
+      this.storageMessage = 'No se pudo guardar el cambio en el dispositivo. Revisa la tarea y vuelve a intentarlo.';
+    } finally {
+      this.isPersisting = false;
+      this.changeDetector.markForCheck();
+    }
   }
 
   async confirmDeleteTask(task: Task) {
+    if (this.isPersisting) return;
 
     const alert = await this.alertController.create({
 
@@ -309,16 +325,11 @@ export class TasksPage {
       ?.focus();
   }
 
-  deleteTask(id: number) {
-
-    this.taskService.deleteTask(id);
-
-    if (this.currentPage > this.totalPages) {
-      this.currentPage = this.totalPages;
-    }
-
-    this.lastTaskCount =
-      this.taskService.totalTasks();
+  async deleteTask(id: number) {
+    await this.persistChange(() => this.taskService.deleteTask(id), () => {
+      if (this.currentPage > this.totalPages) this.currentPage = this.totalPages;
+      this.lastTaskCount = this.taskService.totalTasks();
+    });
   }
 
   formatCreatedAt(createdAt: string): string {

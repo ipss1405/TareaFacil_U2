@@ -21,6 +21,8 @@ export class TaskService {
   private readonly auth = inject(AuthService);
   private readonly loaded = signal(false);
   private persistence: Promise<void> = Promise.resolve();
+  private latestWrite: Promise<void> = Promise.resolve();
+  private localChanges: Promise<void> = Promise.resolve();
   private deviceId?: string;
   private resolveReady!: () => void;
   readonly ready = new Promise<void>(resolve => { this.resolveReady = resolve; });
@@ -64,6 +66,7 @@ export class TaskService {
   async prepareSync(userId: string, assertCurrent: () => void): Promise<readonly Task[]> {
     assertCurrent();
     await this.ready;
+    await this.localChanges;
     assertCurrent();
     if (!this.loaded()) throw new Error('No se pudieron cargar las tareas locales.');
     if (!this.deviceId) {
@@ -404,11 +407,47 @@ export class TaskService {
     void this.saveTasks();
   }
 
+  /** Confirm a UI mutation, reverting only its unchanged records if storage fails. */
+  persistLocalChange<T>(change: () => T): Promise<T> {
+    const user = this.auth.currentUser();
+    const operation = this.localChanges.then(async () => {
+      await this.persistence;
+      if (!user || !this.auth.isReady() || this.auth.currentUser() !== user || !this.loaded()) {
+        throw new Error('La sesión cambió o los datos locales no están disponibles.');
+      }
+      const before = this.taskState();
+      const result = change();
+      const after = this.taskState();
+      if (before === after) return result;
+      const write = this.latestWrite;
+      try {
+        await write;
+        return result;
+      } catch (error) {
+        const previous = new Map(before.map(task => [task.id, task]));
+        const changed = new Map(after.filter(task => previous.get(task.id) !== task).map(task => [task.id, task]));
+        // Keep unrelated tasks and any newer local/Realtime revision intact.
+        this.taskState.update(current => current.flatMap(task => {
+          if (changed.get(task.id) !== task) return [task];
+          const original = previous.get(task.id);
+          return original ? [original] : [];
+        }));
+        // A later queued snapshot may contain the failed mutation. Reconcile it
+        // with the current state, without hiding the original failure from UI.
+        await this.saveTasks(true).catch(() => undefined);
+        throw error;
+      }
+    });
+    this.localChanges = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
   private saveTasks(reportFailure = false): Promise<void> {
     // Persist the complete collection, never the filtered view. Serialize writes
     // so an earlier migration cannot overwrite a later user operation.
     const value = JSON.stringify(this.taskState());
     const write = this.persistence.then(() => Preferences.set({ key: this.storageKey, value }));
+    this.latestWrite = write;
     this.persistence = write.catch(error => console.error('No se pudieron guardar las tareas localmente:', error));
     return reportFailure ? write : this.persistence;
   }

@@ -20,6 +20,80 @@ describe('TaskService', () => {
     TestBed.tick();
   });
 
+  it('confirms Preferences before resolving a local creation', async () => {
+    let finish!: () => void;
+    const original = vi.mocked(Preferences.set).getMockImplementation()!;
+    vi.mocked(Preferences.set).mockImplementationOnce(async options => {
+      await new Promise<void>(resolve => { finish = resolve; });
+      await original(options);
+    });
+    let confirmed = false;
+    const pending = service.persistLocalChange(() => service.addTask('Confirmada', 'Detalle'));
+    void pending.then(() => { confirmed = true; });
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    expect(confirmed).toBe(false);
+    finish(); const task = (await pending)!;
+    expect(confirmed).toBe(true);
+    expect(JSON.parse(context.storage.get('tareafacil_tasks')!).some((item: Task) => item.id === task.id)).toBe(true);
+  });
+
+  it.each(['create', 'edit', 'complete', 'delete'])('rolls back failed %s and preserves persisted identity, metadata and other tasks', async kind => {
+    const task = (await service.persistLocalChange(() => service.addTask('Original', 'Detalle', 'photo.jpg', '2026-11-10T12:00:00Z', 0, 0, 7)))!;
+    const previous = service.tasks();
+    const stored = context.storage.get('tareafacil_tasks');
+    vi.mocked(Preferences.set).mockRejectedValueOnce(new Error('Storage unavailable'));
+    await expect(service.persistLocalChange(() => {
+      if (kind === 'create') service.addTask('Fallida', 'Sin perder formulario');
+      else if (kind === 'edit') service.updateTask(task.id, 'Cambio', 'Detalle', task.photoPath);
+      else if (kind === 'complete') service.toggleTask(task.id);
+      else service.deleteTask(task.id);
+    })).rejects.toThrow('Storage unavailable');
+    expect(service.tasks()).toEqual(previous);
+    expect(context.storage.get('tareafacil_tasks')).toBe(stored);
+    expect(service.getTask(task.id)).toEqual(task);
+    await service.persistLocalChange(() => service.updateTask(task.id, 'Reintento', 'Detalle', task.photoPath));
+    expect(service.getTask(task.id)?.title).toBe('Reintento');
+  });
+
+  it('preserves newer changes when an earlier write fails and reconciles queued snapshots', async () => {
+    const task = (await service.persistLocalChange(() => service.addTask('Original', 'Detalle')))!;
+    let fail!: (error: Error) => void;
+    vi.mocked(Preferences.set).mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+    const failed = service.persistLocalChange(() => service.updateTask(task.id, 'Fallida', 'Detalle'));
+    await vi.waitFor(() => expect(fail).toBeDefined());
+    service.updateTask(task.id, 'Nueva revision', 'Detalle');
+    service.addTask('Otra tarea', 'Se conserva');
+    fail(new Error('Write failed'));
+    await expect(failed).rejects.toThrow('Write failed');
+    expect(service.getTask(task.id)?.title).toBe('Nueva revision');
+    expect(service.tasks().some(item => item.title === 'Otra tarea')).toBe(true);
+    expect(JSON.parse(context.storage.get('tareafacil_tasks')!)).toEqual(service.tasks());
+  });
+
+  it('waits for local confirmation before preparing a manual sync snapshot', async () => {
+    let fail!: (error: Error) => void;
+    vi.mocked(Preferences.set).mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+    const saving = service.persistLocalChange(() => service.addTask('Not confirmed', 'Detalle'));
+    const rejected = expect(saving).rejects.toThrow('Failed write');
+    await vi.waitFor(() => expect(fail).toBeDefined());
+    let ready = false;
+    const snapshot = service.prepareSync(context.userA.id, () => undefined);
+    void snapshot.then(() => { ready = true; });
+    await Promise.resolve();
+    expect(ready).toBe(false);
+    fail(new Error('Failed write'));
+    await rejected;
+    expect((await snapshot).some(task => task.title === 'Not confirmed')).toBe(false);
+  });
+
+  it('keeps prior persisted data if storage stays unavailable', async () => {
+    const original = context.storage.get('tareafacil_tasks');
+    vi.mocked(Preferences.set).mockRejectedValue(new Error('Full disk'));
+    await expect(service.persistLocalChange(() => service.addTask('Fallida', 'Detalle'))).rejects.toThrow('Full disk');
+    expect(service.totalTasks()).toBe(2);
+    expect(context.storage.get('tareafacil_tasks')).toBe(original);
+  });
+
   it('shares current counters and progress across task changes', () => {
     const task = service.addTask('  Nueva  ', '  Detalle  ');
     expect(task?.title).toBe('Nueva');
