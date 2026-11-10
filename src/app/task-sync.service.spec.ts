@@ -78,7 +78,7 @@ describe('Manual task synchronization with persisted local storage', () => {
       expect(stored.find(t => t.id === task.id)?.originDeviceId).toBeDefined();
       return original(sent, ctx);
     });
-    await sync.sync();
+    expect(await sync.sync()).toBe('success');
     const result = tasks.getTask(task.id)!;
     expect(result).toMatchObject({ remoteId: task.remoteId, userId: context.userA.id, photoPath: 'local.jpg', latitude: 0, longitude: 0, accuracy: 0, syncStatus: 'synced', remoteRevision: 1 });
     expect(result.createdAt).toBe(task.createdAt);
@@ -250,20 +250,20 @@ describe('Manual task synchronization with persisted local storage', () => {
     expect(sync.label()).toBe('Inicia sesión para sincronizar');
     expect(api.insert).not.toHaveBeenCalled();
     remoteUser.set(null);
-    await sync.sync();
+    expect(await sync.sync()).toBe('reauth');
     expect(api.download).not.toHaveBeenCalled();
   });
 
   it('does not send when local persistence fails and leaves retryable pending state', async () => {
     tasks.addTask('Pendiente', 'Detalle');
     vi.mocked(Preferences.set).mockRejectedValue(new Error('Disco lleno'));
-    await sync.sync();
+    expect(await sync.sync()).toBe('error');
     expect(sync.label()).toBe('Error');
     expect(api.insert).not.toHaveBeenCalled();
     expect(tasks.tasks()[0].syncStatus).toBe('pending');
   });
 
-  it('serializes manual sync attempts and does not run automatically for local mutations', async () => {
+  it('serializes manual sync attempts; local mutations alone do not invoke the transport without a coordinator', async () => {
     tasks.addTask('Pendiente', 'Detalle');
     TestBed.tick();
     expect(api.insert).not.toHaveBeenCalled();

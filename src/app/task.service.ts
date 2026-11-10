@@ -1,3 +1,4 @@
+import { Subject } from 'rxjs';
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Preferences } from '@capacitor/preferences';
 import { Task } from './task.model';
@@ -23,6 +24,14 @@ export class TaskService {
   private persistence: Promise<void> = Promise.resolve();
   private latestWrite: Promise<void> = Promise.resolve();
   private localChanges: Promise<void> = Promise.resolve();
+  private readonly confirmedChanges = new Subject<{ userId: string }>();
+  readonly localChangesConfirmed = this.confirmedChanges.asObservable();
+
+  async waitForLocalPersistence(): Promise<void> {
+    await this.ready;
+    await this.localChanges;
+    await this.latestWrite;
+  }
   private deviceId?: string;
   private resolveReady!: () => void;
   readonly ready = new Promise<void>(resolve => { this.resolveReady = resolve; });
@@ -264,6 +273,7 @@ export class TaskService {
   }
 
   async importTasks(candidates: readonly ExternalTask[], expectedUserId: string): Promise<TaskImportResult> {
+    const session = this.auth.currentUser();
     const startedUserId = this.auth.isReady() ? this.auth.currentUser()?.id : undefined;
     if (!expectedUserId || startedUserId !== expectedUserId) throw new Error('La sesión cambió. Vuelve a consultar las tareas.');
     await this.ready;
@@ -290,6 +300,9 @@ export class TaskService {
     if (imported.length) this.taskState.update(tasks => [...tasks, ...imported]);
     // Also persist on retry when all selected records already exist in memory.
     await this.saveTasks(true);
+    if (candidates.length && this.auth.currentUser() === session && this.currentUserId() === expectedUserId) {
+      this.confirmedChanges.next({ userId: expectedUserId });
+    }
     return { imported: imported.length, existing };
   }
 
@@ -422,6 +435,7 @@ export class TaskService {
       const write = this.latestWrite;
       try {
         await write;
+        if (this.auth.currentUser() === user && this.auth.isReady()) this.confirmedChanges.next({ userId: user.id });
         return result;
       } catch (error) {
         const previous = new Map(before.map(task => [task.id, task]));

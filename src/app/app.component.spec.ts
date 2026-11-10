@@ -1,3 +1,4 @@
+import { TaskAutoSyncService } from './task-auto-sync.service';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { AppComponent } from './app.component';
@@ -7,7 +8,7 @@ describe('AppComponent', () => {
   it('should create the app', async () => {
     await TestBed.configureTestingModule({
       imports: [AppComponent],
-      providers: [provideRouter([]), { provide: TaskRealtimeService, useValue: {} }]
+      providers: [provideRouter([]), { provide: TaskAutoSyncService, useValue: {} }, { provide: TaskRealtimeService, useValue: {} }]
     }).compileComponents();
     
     const fixture = TestBed.createComponent(AppComponent);

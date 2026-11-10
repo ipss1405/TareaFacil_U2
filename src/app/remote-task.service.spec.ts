@@ -103,4 +103,20 @@ describe('RemoteTaskService with the real Supabase query builder', () => {
     expect(local.photoPath).toBeUndefined();
     expect(sameTaskContent(task, { ...row, scheduled_at: '2026-11-12T12:00:00+00:00' })).toBe(true);
   });
+  it('stops new automatic download pages after the application leaves the foreground', async () => {
+    let active = true;
+    const page = Array.from({ length: 500 }, (_, index) => ({ ...row, id: 'row-' + index }));
+    fetchMock.mockImplementation(async () => { active = false; return response(page); });
+    await expect(service.download({ ...ctx, canStartRequest: () => active })).rejects.toMatchObject({ code: 'PAUSED' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts an in-flight write acknowledgement after pausing so newer edits retain their revision base', async () => {
+    let active = true;
+    fetchMock.mockImplementation(async () => { active = false; return response(row, 201); });
+    expect(await service.insert(task, { ...ctx, canStartRequest: () => active })).toEqual(row);
+    await expect(service.update(task, { ...ctx, canStartRequest: () => active })).rejects.toMatchObject({ code: 'PAUSED' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
 });

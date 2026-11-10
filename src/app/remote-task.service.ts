@@ -6,6 +6,7 @@ import { RemoteTask, readRemoteTask, taskContent } from './remote-task.model';
 export interface SyncContext {
   ownerId: string;
   assertCurrent: () => void;
+  canStartRequest?: () => boolean;
 }
 
 export class TaskRemoteError extends Error {
@@ -18,10 +19,14 @@ export class RemoteTaskService {
 
   private async request<T>(context: SyncContext, operation: () => PromiseLike<{ data: T; error: { message: string; code?: string } | null; status: number }>): Promise<T> {
     context.assertCurrent();
+    const checkForeground = () => {
+      if (context.canStartRequest && !context.canStartRequest()) throw new TaskRemoteError('Automatic synchronization paused.', 'PAUSED');
+    };
+    checkForeground();
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const result = await Promise.race([
-        Promise.resolve().then(() => { context.assertCurrent(); return operation(); }),
+        Promise.resolve().then(() => { context.assertCurrent(); checkForeground(); return operation(); }),
         new Promise<never>((_resolve, reject) => {
           timer = setTimeout(() => reject(new TaskRemoteError('La sincronización superó el tiempo de espera.', 'NETWORK')), 12000);
         })

@@ -1,3 +1,4 @@
+import { Subject } from 'rxjs';
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Preferences } from '@capacitor/preferences';
 import { AuthService } from './auth.service';
@@ -6,6 +7,9 @@ import { TaskService } from './task.service';
 import { RemoteTaskService, SyncContext, TaskRemoteError } from './remote-task.service';
 import { fromRemote, RemoteTask, sameTaskContent } from './remote-task.model';
 import { Task } from './task.model';
+
+export type SyncOutcome = 'success' | 'transient' | 'reauth' | 'conflict' | 'error' | 'busy' | 'cancelled' | 'paused';
+export interface SyncCompletion { outcome: SyncOutcome; localSession: object; remoteSession: object; }
 
 type SyncStatus = 'pending' | 'syncing' | 'synced' | 'offline' | 'reauth' | 'error' | 'conflict';
 interface SyncReport {
@@ -26,6 +30,8 @@ export class TaskSyncService {
   private readonly remote = inject(RemoteTaskService);
   private readonly report = signal<SyncReport | null>(null);
   readonly running = signal(false);
+  private readonly completionEvents = new Subject<SyncCompletion>();
+  readonly completed = this.completionEvents.asObservable();
 
   readonly state = computed(() => {
     const local = this.auth.currentUser();
@@ -63,19 +69,25 @@ export class TaskSyncService {
     return `tareafacil_sync_${localId}_${ownerId}`;
   }
 
-  async sync(): Promise<void> {
-    if (this.running()) return;
+  async sync(canContinue?: () => boolean): Promise<SyncOutcome> {
+    if (this.running()) return 'busy';
     const local = this.auth.currentUser();
     const remoteUser = this.remoteAuth.currentUser();
-    if (!local?.remoteUserId || remoteUser?.id !== local.remoteUserId) return;
+    if (!local?.remoteUserId || remoteUser?.id !== local.remoteUserId) return 'reauth';
     const context: SyncContext = {
       ownerId: remoteUser.id,
+      canStartRequest: canContinue,
       assertCurrent: () => {
         if (this.auth.currentUser() !== local || this.remoteAuth.currentUser() !== remoteUser ||
           this.auth.currentUser()?.remoteUserId !== remoteUser.id) {
           throw new TaskRemoteError('La sesión cambió. Vuelve a iniciar la sincronización.', 'SESSION');
         }
       }
+    };
+    const send = <T>(operation: () => Promise<T>): Promise<T> => {
+      context.assertCurrent();
+      if (canContinue && !canContinue()) throw new TaskRemoteError('Automatic synchronization paused.', 'PAUSED');
+      return operation();
     };
     const previousTime = this.state().lastSyncedAt;
     const publish = (status: SyncStatus, message?: string, lastSyncedAt = previousTime) => {
@@ -86,6 +98,7 @@ export class TaskSyncService {
     this.running.set(true);
     publish('syncing');
     let conflicts = 0;
+    let outcome: SyncOutcome = 'cancelled';
     try {
       const snapshot = await this.tasks.prepareSync(local.id, context.assertCurrent);
       context.assertCurrent();
@@ -94,22 +107,22 @@ export class TaskSyncService {
         let row: RemoteTask | null;
         let confirmedWrite = true;
         if (task.remoteRevision) {
-          row = await this.remote.update(task, context);
+          row = await send(() => this.remote.update(task, context));
           context.assertCurrent();
           if (!row) {
-            row = await this.remote.find(task, context);
+            row = await send(() => this.remote.find(task, context));
             confirmedWrite = false;
           }
         } else {
           try {
-            row = await this.remote.insert(task, context);
+            row = await send(() => this.remote.insert(task, context));
           } catch (error) {
             context.assertCurrent();
             if (!(error instanceof TaskRemoteError) || error.code !== '23505') throw error;
             row = await this.remote.find(task, context);
             context.assertCurrent();
             if (!row && task.externalSource && task.externalId !== undefined) {
-              row = await this.remote.find(task, context, true);
+              row = await send(() => this.remote.find(task, context, true));
             }
             confirmedWrite = false;
           }
@@ -125,7 +138,7 @@ export class TaskSyncService {
         await this.tasks.acceptRemote(fromRemote(row, local.id), context.assertCurrent, task, confirmedWrite || equivalent);
         context.assertCurrent();
       }
-      const rows = await this.remote.download(context);
+      const rows = await send(() => this.remote.download(context));
       context.assertCurrent();
       for (const row of rows) {
         context.assertCurrent();
@@ -138,18 +151,25 @@ export class TaskSyncService {
       publish(conflicts ? 'conflict' : this.tasks.pendingSyncCount() ? 'pending' : 'synced',
         conflicts ? `${conflicts} conflicto(s): prevaleció la versión remota. Se conservó una copia local del cambio en el registro de conflictos.` : undefined,
         lastSyncedAt);
+      outcome = conflicts ? 'conflict' : 'success';
     } catch (error) {
       try {
         context.assertCurrent();
         const message = error instanceof Error ? error.message : 'No se pudo sincronizar.';
         const code = error instanceof TaskRemoteError ? error.code : undefined;
         const status = error instanceof TaskRemoteError ? error.status : undefined;
-        publish(status === 401 || code === 'PGRST301' ? 'reauth'
-          : code === 'NETWORK' || status === 0 || /fetch|network|sin conexión|timeout|aborted/i.test(message) ? 'offline' : 'error', message);
+        const reauth = status === 401 || code === 'PGRST301';
+        const forbidden = status === 403 || code === '42501';
+        const network = !forbidden && (code === 'NETWORK' || status === 0 || /fetch|network|sin conexión|timeout|aborted/i.test(message));
+        const transient = !forbidden && (network || status === 429 || (status !== undefined && status >= 500 && status <= 599));
+        outcome = code === 'PAUSED' ? 'paused' : reauth ? 'reauth' : transient ? 'transient' : 'error';
+        publish(code === 'PAUSED' ? 'pending' : reauth ? 'reauth' : network ? 'offline' : 'error', code === 'PAUSED' ? undefined : message);
       } catch { /* Ignore responses from a previous session. */ }
     } finally {
       this.running.set(false);
+      this.completionEvents.next({ outcome, localSession: local, remoteSession: remoteUser });
     }
+    return outcome;
   }
 
   private async saveConflict(local: Task, remote: RemoteTask, context: SyncContext): Promise<void> {
