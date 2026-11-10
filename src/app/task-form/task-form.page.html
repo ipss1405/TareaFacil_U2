@@ -235,7 +235,7 @@
             @if (photoPath) {
               <div class="resource-actions">
                 <ion-button class="resource-update" fill="clear" [disabled]="isTakingPhoto || isSaving" (click)="takePhoto()" aria-label="Cambiar fotografía">Cambiar</ion-button>
-                <ion-button class="resource-remove" fill="clear" (click)="removePhoto()" aria-label="Quitar fotografía" title="Quitar fotografía"><ion-icon slot="icon-only" name="close-outline" aria-hidden="true"></ion-icon></ion-button>
+                <ion-button class="resource-remove" fill="clear" [disabled]="isTakingPhoto || isSaving" (click)="removePhoto()" aria-label="Quitar fotografía" title="Quitar fotografía"><ion-icon slot="icon-only" name="close-outline" aria-hidden="true"></ion-icon></ion-button>
               </div>
             }
           </div>
@@ -246,8 +246,8 @@
 
       @if (awaitingLocationDecision && editingId === null) {
         <div class="resource-message" role="group" aria-label="No se pudo registrar la ubicación" aria-describedby="location-feedback">
-          <ion-button fill="outline" [disabled]="isSaving || isGettingLocation" (click)="saveTask()">Reintentar ubicación</ion-button>
-          <ion-button fill="clear" [disabled]="isSaving || isGettingLocation" (click)="saveTask(true)">Continuar sin ubicación</ion-button>
+          <ion-button fill="outline" [disabled]="isSaving || isGettingLocation || isTakingPhoto" (click)="saveTask()">Reintentar ubicación</ion-button>
+          <ion-button fill="clear" [disabled]="isSaving || isGettingLocation || isTakingPhoto" (click)="saveTask(true)">Continuar sin ubicación</ion-button>
         </div>
       }
 
@@ -260,7 +260,7 @@
           <ion-button
             class="primary-button"
             expand="block"
-            [disabled]="isSaving" [attr.aria-busy]="isSaving"
+            [disabled]="isSaving || isTakingPhoto" [attr.aria-busy]="isSaving"
             (click)="saveTask()">
 
             <ion-icon
@@ -279,7 +279,7 @@
 
           <ion-button
             class="save-button"
-            [disabled]="isSaving"
+            [disabled]="isSaving || isTakingPhoto"
             expand="block"
             (click)="saveTask()">
 

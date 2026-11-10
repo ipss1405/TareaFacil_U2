@@ -413,67 +413,52 @@ export class TaskFormPage implements OnDestroy {
   }
 
   async takePhoto() {
-
+    if (this.isTakingPhoto || this.isSaving || !this.active || !this.auth.isReady()) return;
+    const user = this.auth.currentUser();
+    if (!user) return;
+    const generation = this.generation;
+    const valid = () => this.active && generation === this.generation &&
+      this.auth.isReady() && this.auth.currentUser() === user;
+    let pendingPreview = '';
     this.cameraMessage = '';
-
     this.isTakingPhoto = true;
-
     try {
-
-      const photo =
-        await Camera.takePhoto({
-          quality: 85,
-          correctOrientation: true,
-          saveToGallery: false,
-          includeMetadata: true
-        });
-
-      /*
-       * Guardamos primero el archivo
-       * en almacenamiento permanente.
-       */
-      const savedPath =
-        await this.savePhotoLocally(
-          photo
-        );
-
+      const photo = await Camera.takePhoto({
+        quality: 85, correctOrientation: true, saveToGallery: false, includeMetadata: true
+      });
+      if (!valid()) return;
+      const savedPath = await this.savePhotoLocally(photo);
+      if (!valid()) return;
+      pendingPreview = await this.getPhotoPreviewUrl(savedPath);
+      if (!valid()) return;
+      if (!pendingPreview) throw new Error('No photo preview available');
+      // Commit the new path and preview together only after both are ready.
       this.revokePhotoPreview();
-
-      this.photoPath =
-        savedPath;
-
-      /*
-       * Obtenemos una URL adecuada
-       * solamente para mostrar la imagen.
-       */
-      this.photoPreviewUrl =
-        await this.getPhotoPreviewUrl(
-          savedPath
-        );
-
-      this.cameraMessage =
-        'Fotografía guardada correctamente.';
-
+      this.photoPath = savedPath;
+      this.photoPreviewUrl = pendingPreview;
+      pendingPreview = '';
+      this.cameraMessage = 'Fotografía guardada correctamente.';
     } catch (error) {
-
-      console.error(
-        'No se pudo obtener o guardar la fotografía:',
-        error
-      );
-
-      this.cameraMessage =
-        'No se pudo guardar la fotografía.';
-
+      if (!valid()) return;
+      const { code, name, message } = (error ?? {}) as { code?: string; name?: string; message?: string };
+      if (code === 'OS-PLUG-CAMR-0003' || name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        this.cameraMessage = 'Permiso de cámara rechazado. Puedes habilitarlo en los ajustes y reintentar.';
+      } else if (code === 'OS-PLUG-CAMR-0006' || name === 'AbortError' || message === 'User cancelled photos app') {
+        this.cameraMessage = 'Captura cancelada. Se conserva la fotografía anterior, si existe.';
+      } else {
+        console.error('No se pudo obtener o guardar la fotografía:', error);
+        this.cameraMessage = 'No se pudo guardar la fotografía. Ocurrió un error de captura, lectura o almacenamiento.';
+      }
     } finally {
-
+      if (pendingPreview.startsWith('blob:')) URL.revokeObjectURL(pendingPreview);
       this.isTakingPhoto = false;
-
       this.changeDetector.markForCheck();
     }
-
   }
 
   removePhoto() {
+
+    if (this.isTakingPhoto || this.isSaving) return;
 
     this.revokePhotoPreview();
 
@@ -555,7 +540,7 @@ export class TaskFormPage implements OnDestroy {
 
   async saveTask(continueWithoutLocation = false) {
 
-    if (this.isSaving || !this.active || !this.auth.isReady() || !this.auth.currentUser()) return;
+    if (this.isSaving || this.isTakingPhoto || !this.active || !this.auth.isReady() || !this.auth.currentUser()) return;
     if (continueWithoutLocation && (!this.awaitingLocationDecision || this.auth.currentUser() !== this.locationDecisionUser)) return;
 
     this.validationAttempted = true;
@@ -927,8 +912,6 @@ export class TaskFormPage implements OnDestroy {
     this.scheduledTime = '';
 
     this.cameraMessage = '';
-
-    this.isTakingPhoto = false;
 
     this.latitude = undefined;
 

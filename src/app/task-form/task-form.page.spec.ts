@@ -352,8 +352,12 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
       expect(page.isTakingPhoto).toBe(false);
       expect(page.photoPath).toBe(task.photoPath);
       expect(page.photoPreviewUrl).toBe(photoPreview);
-      expect(page.cameraMessage).toBe('No se pudo guardar la fotografía.');
-      expect(console.error).toHaveBeenCalledWith('No se pudo obtener o guardar la fotografía:', error);
+      expect(page.cameraMessage).toMatch(/No se pudo guardar|rechazado|cancelada/);
+      if (platform === 'android' && 'code' in error && error.code === 'OS-PLUG-CAMR-0010') {
+        expect(console.error).toHaveBeenCalledWith('No se pudo obtener o guardar la fotografía:', error);
+      }
+      expect(page.cameraMessage).toContain(error instanceof DOMException || ('code' in error && error.code === 'OS-PLUG-CAMR-0003')
+        ? 'rechazado' : ('code' in error && error.code === 'OS-PLUG-CAMR-0010') ? 'No se pudo guardar' : 'cancelada');
       expect(Filesystem.writeFile).not.toHaveBeenCalled();
       expect(Filesystem.readFile).not.toHaveBeenCalled();
       expect(files.get(task.photoPath!)).toBe(photoBytes);
@@ -428,6 +432,96 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
       expect(page.photoPreviewUrl).toBe(photoPreview);
       expect(page.isTakingPhoto).toBe(false);
       expect(page.cameraMessage).toContain('No se pudo guardar');
+    });
+
+
+    it('blocks saving and a second capture while the camera is busy', async () => {
+      let finish!: (photo: Awaited<ReturnType<typeof Camera.takePhoto>>) => void;
+      vi.mocked(Camera.takePhoto).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      const add = vi.spyOn(tasks, 'addTask');
+      const pending = page.takePhoto();
+      await page.takePhoto(); await page.saveTask();
+      expect(Camera.takePhoto).toHaveBeenCalledTimes(1);
+      expect(Geolocation.getCurrentPosition).not.toHaveBeenCalled();
+      expect(add).not.toHaveBeenCalled();
+      finish(capturedPhoto); await pending;
+      await page.saveTask();
+      expect(add).toHaveBeenCalledTimes(1);
+      expect(tasks.tasks().at(-1)?.photoPath).toMatch(/^task-photos\//);
+    });
+
+    it('keeps the previous association until the replacement preview is ready', async () => {
+      const task = await editWithPhoto();
+      let finish!: (value: { data: string }) => void;
+      vi.mocked(Filesystem.readFile).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      const pending = page.takePhoto();
+      await vi.waitFor(() => expect(Filesystem.writeFile).toHaveBeenCalledTimes(1));
+      expect(page.photoPath).toBe(task.photoPath);
+      expect(page.photoPreviewUrl).toBe(photoPreview);
+      await page.saveTask();
+      finish({ data: photoBytes }); await pending;
+      expect(page.photoPath).not.toBe(task.photoPath);
+      const replacement = page.photoPath;
+      await page.saveTask();
+      expect(tasks.getTask(task.id)?.photoPath).toBe(replacement);
+      expect(Filesystem.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it('retains the previous photo and preview if the new preview fails', async () => {
+      const task = await editWithPhoto();
+      vi.mocked(Filesystem.readFile).mockRejectedValueOnce(new Error('New preview failed'));
+      await page.takePhoto();
+      expect(Filesystem.writeFile).toHaveBeenCalledTimes(1);
+      expect(page.photoPath).toBe(task.photoPath);
+      expect(page.photoPreviewUrl).toBe(photoPreview);
+      expect(page.cameraMessage).toContain('No se pudo guardar');
+      await page.saveTask();
+      expect(tasks.getTask(task.id)?.photoPath).toBe(task.photoPath);
+    });
+
+    it.each(['leave', 'logout', 'switch', 'same-user-new-session'])('ignores a late capture after %s', async scenario => {
+      const task = await editWithPhoto();
+      let finish!: (photo: Awaited<ReturnType<typeof Camera.takePhoto>>) => void;
+      vi.mocked(Camera.takePhoto).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      const pending = page.takePhoto();
+      if (scenario === 'leave') page.ionViewWillLeave();
+      else if (scenario === 'logout') context.currentUser.set(null);
+      else if (scenario === 'switch') context.currentUser.set(context.userB);
+      else context.currentUser.set({ ...context.userA });
+      TestBed.tick(); finish(capturedPhoto); await pending;
+      expect(page.photoPath).toBe(task.photoPath);
+      expect(page.photoPreviewUrl).toBe(photoPreview);
+      expect(Filesystem.writeFile).not.toHaveBeenCalled();
+      expect(page.isTakingPhoto).toBe(false);
+    });
+
+    it('ignores a late filesystem write after leaving', async () => {
+      const task = await editWithPhoto();
+      let finish!: (value: { uri: string }) => void;
+      vi.mocked(Filesystem.writeFile).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      const pending = page.takePhoto();
+      await vi.waitFor(() => expect(Filesystem.writeFile).toHaveBeenCalledTimes(1));
+      page.ionViewWillLeave(); finish({ uri: 'file:///new.png' }); await pending;
+      expect(page.photoPath).toBe(task.photoPath);
+      expect(page.photoPreviewUrl).toBe(photoPreview);
+    });
+
+    it('ignores and releases a late blob preview after leaving', async () => {
+      const task = await editWithPhoto();
+      let finish!: (value: { data: Blob }) => void;
+      const revoke = vi.fn();
+      const create = vi.fn().mockReturnValue('blob:late-preview');
+      const originalCreate = URL.createObjectURL, originalRevoke = URL.revokeObjectURL;
+      URL.createObjectURL = create; URL.revokeObjectURL = revoke;
+      try {
+        vi.mocked(Filesystem.readFile).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+        const pending = page.takePhoto();
+        await vi.waitFor(() => expect(Filesystem.writeFile).toHaveBeenCalledTimes(1));
+        page.ionViewWillLeave(); finish({ data: new Blob(['photo']) }); await pending;
+        expect(page.photoPath).toBe(task.photoPath);
+        expect(page.photoPreviewUrl).toBe(photoPreview);
+        expect(revoke).toHaveBeenCalledWith('blob:late-preview');
+      } finally { URL.createObjectURL = originalCreate; URL.revokeObjectURL = originalRevoke; }
     });
 
     it('reports preview recovery errors without erasing the existing task or its photo association', async () => {
