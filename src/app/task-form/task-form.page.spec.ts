@@ -45,6 +45,7 @@ describe('TaskFormPage scheduling and persistent photography', () => {
     vi.spyOn(Capacitor, 'getPlatform').mockReturnValue('web');
     createObjectURL.mockReturnValue('blob:test-photo-preview');
     vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL, revokeObjectURL }));
+    vi.mocked(Geolocation.getCurrentPosition).mockResolvedValue(position());
     vi.mocked(Camera.takePhoto).mockResolvedValue({
       type: MediaType.Photo, saved: false, thumbnail: dataUrl,
       webPath: 'blob:temporary-camera-photo', metadata: { format: 'png' }
@@ -71,32 +72,32 @@ describe('TaskFormPage scheduling and persistent photography', () => {
 
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-  it('combines local date and time into ISO and resets the form', () => {
+  it('combines local date and time into ISO and resets the form', async () => {
     page.scheduledDate = '2026-11-10';
     page.scheduledTime = '15:30';
-    page.saveTask();
+    await page.saveTask();
     expect(service.tasks().at(-1)?.scheduledAt).toBe(new Date(2026, 10, 10, 15, 30).toISOString());
     expect(navigateBack).toHaveBeenCalledWith('/home', { replaceUrl: true });
     expect(page.scheduledDate).toBe('');
     expect(page.scheduledTime).toBe('');
   });
 
-  it('allows no schedule but rejects partial or invalid scheduling', () => {
+  it('allows no schedule but rejects partial or invalid scheduling', async () => {
     page.scheduledDate = '2026-11-10';
-    page.saveTask();
+    await page.saveTask();
     expect(service.totalTasks()).toBe(2);
     expect(page.validationMessage).toContain('fecha y hora');
     page.scheduledTime = '25:30';
-    page.saveTask();
+    await page.saveTask();
     expect(service.totalTasks()).toBe(2);
     page.scheduledTime = '15:30';
     page.scheduledDate = '2026-02-30';
-    page.saveTask();
+    await page.saveTask();
     expect(service.totalTasks()).toBe(2);
     page.scheduledDate = '';
     page.scheduledTime = '';
     expect(page.validationMessage).toBe('');
-    page.saveTask();
+    await page.saveTask();
     expect(service.tasks().at(-1)?.scheduledAt).toBeUndefined();
     expect(service.totalTasks()).toBe(3);
   });
@@ -110,7 +111,7 @@ describe('TaskFormPage scheduling and persistent photography', () => {
     expect(page.photoPreviewUrl).toBe(dataUrl);
     expect(page.scheduledTime).toBe('15:30');
     page.scheduledTime = '16:45';
-    page.saveTask();
+    await page.saveTask();
     expect(service.getTask(task.id)?.scheduledAt).toBe(new Date(2026, 10, 10, 16, 45).toISOString());
     expect(service.getTask(task.id)?.createdAt).toBe(task.createdAt);
     expect(service.getTask(task.id)?.photoPath).toBe('task-photos/saved.png');
@@ -121,7 +122,7 @@ describe('TaskFormPage scheduling and persistent photography', () => {
     await page.ionViewWillEnter();
     expect(page.scheduledDate).toBe('');
     expect(page.scheduledTime).toBe('');
-    page.saveTask();
+    await page.saveTask();
     expect(service.getTask(1)?.scheduledAt).toBeUndefined();
   });
 
@@ -139,7 +140,7 @@ describe('TaskFormPage scheduling and persistent photography', () => {
     expect(page.isTakingPhoto).toBe(false);
     page.scheduledDate = '2026-11-10';
     page.scheduledTime = '15:30';
-    page.saveTask();
+    await page.saveTask();
     expect(service.tasks().at(-1)?.photoPath).toBe(permanentPath);
     expect(service.tasks().at(-1)?.scheduledAt).toBeDefined();
     expect(page.photoPath).toBe('');
@@ -178,7 +179,7 @@ describe('TaskFormPage scheduling and persistent photography', () => {
     expect(page.photoPath).toBe('');
     expect(page.photoPreviewUrl).toBe('');
     expect(page.cameraMessage).toContain('eliminada');
-    page.saveTask();
+    await page.saveTask();
     expect(service.getTask(task.id)?.photoPath).toBeUndefined();
   });
 
@@ -283,7 +284,7 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
 
   async function editWithLocation() {
     await page.getCurrentLocation();
-    page.saveTask();
+    await page.saveTask();
     const task = tasks.tasks().at(-1)!;
     await persisted(task.id);
     await enter(task.id);
@@ -356,7 +357,7 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
       expect(Filesystem.writeFile).not.toHaveBeenCalled();
       expect(Filesystem.readFile).not.toHaveBeenCalled();
       expect(files.get(task.photoPath!)).toBe(photoBytes);
-      page.saveTask();
+      await page.saveTask();
       expect(tasks.getTask(task.id)?.photoPath).toBe(task.photoPath);
     });
 
@@ -375,7 +376,7 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
     it('associates a captured photo, reloads task metadata and recovers preview from the simulated filesystem', async () => {
       await page.takePhoto();
       const path = page.photoPath;
-      page.saveTask();
+      await page.saveTask();
       const task = tasks.tasks().at(-1)!;
       expect((await persisted(task.id)).photoPath).toBe(path);
       TestBed.resetTestingModule();
@@ -394,7 +395,7 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
       expect(page.photoPath).toBe('');
       expect(page.photoPreviewUrl).toBe('');
       expect(page.cameraMessage).toContain('eliminada del formulario');
-      page.saveTask();
+      await page.saveTask();
       await vi.waitFor(() => expect((JSON.parse(context.storage.get('tareafacil_tasks')!) as Task[])
         .find(t => t.id === task.id)?.photoPath).toBeUndefined());
       expect(tasks.getTask(task.id)?.photoPath).toBeUndefined();
@@ -410,7 +411,7 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
       expect(page.photoPath).toBe(task.photoPath);
       expect(page.photoPreviewUrl).toBe(photoPreview);
       expect(files).toEqual(new Map([[task.photoPath!, photoBytes]]));
-      page.saveTask();
+      await page.saveTask();
       expect(tasks.getTask(task.id)?.photoPath).toBe(task.photoPath);
       expect(page.isTakingPhoto).toBe(false);
     });
@@ -460,10 +461,10 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
     });
 
     it('accepts zero coordinates and accuracy and associates them with a saved task', async () => {
-      vi.mocked(Geolocation.getCurrentPosition).mockResolvedValueOnce(position(0, 0, 0));
+      vi.mocked(Geolocation.getCurrentPosition).mockResolvedValue(position(0, 0, 0));
       await page.getCurrentLocation();
       expect(page.hasLocation).toBe(true);
-      page.saveTask();
+      await page.saveTask();
       expect(tasks.tasks().at(-1)).toMatchObject({ latitude: 0, longitude: 0, accuracy: 0 });
     });
 
@@ -484,13 +485,13 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
       vi.mocked(Geolocation.getCurrentPosition).mockRejectedValueOnce(error);
       const pending = page.getCurrentLocation();
       expect(page.isGettingLocation).toBe(true);
-      await expect(pending).resolves.toBeUndefined();
+      await expect(pending).resolves.toBe(false);
       expect(page.latitude).toBeUndefined();
       expect(page.longitude).toBeUndefined();
       expect(page.accuracy).toBeUndefined();
       expect(page.hasLocation).toBe(false);
       expect(page.isGettingLocation).toBe(false);
-      expect(page.locationMessage).toBe('No se pudo obtener la ubicación. Revisa los permisos de localización.');
+      expect(page.locationMessage).toMatch(/rechazado|desactivado|agot\u00f3|No se pudo/);
       expect(console.error).toHaveBeenCalledWith('No se pudo obtener la ubicación:', error);
       expect(Geolocation.requestPermissions).not.toHaveBeenCalled();
     });
@@ -506,7 +507,7 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
       expect(page.longitude).toBe(task.longitude);
       expect(page.accuracy).toBe(task.accuracy);
       expect(page.locationRemoved).toBe(false);
-      page.saveTask();
+      await page.saveTask();
       expect(tasks.getTask(task.id)).toMatchObject({ latitude: task.latitude, longitude: task.longitude, accuracy: task.accuracy });
     });
 
@@ -518,14 +519,14 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
       await page.getCurrentLocation();
       expect(page.locationRemoved).toBe(false);
       expect(page.isGettingLocation).toBe(false);
-      page.saveTask();
+      await page.saveTask();
       expect(tasks.getTask(task.id)).toMatchObject({ latitude: -34, longitude: -71, accuracy: 3 });
       expect(tasks.getTask(task.id)?.createdAt).toBe(task.createdAt);
     });
 
     it('persists a captured location and recovers it when editing after service recreation without another GPS request', async () => {
       await page.getCurrentLocation();
-      page.saveTask();
+      await page.saveTask();
       const task = tasks.tasks().at(-1)!;
       expect(await persisted(task.id)).toMatchObject({ userId: context.userA.id, latitude: -33.45, longitude: -70.66, accuracy: 7 });
       TestBed.resetTestingModule();
@@ -536,13 +537,13 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
       expect(page.accuracy).toBe(7);
       expect(page.hasLocation).toBe(true);
       expect(page.locationMessage).toBe('Ubicación guardada en esta tarea.');
-      expect(Geolocation.getCurrentPosition).toHaveBeenCalledOnce();
+      expect(Geolocation.getCurrentPosition).toHaveBeenCalledTimes(2);
     });
 
     it('uses locationRemoved to actually erase stored coordinates while preserving task identity and photo', async () => {
       const task = await editWithPhoto();
       await page.getCurrentLocation();
-      page.saveTask();
+      await page.saveTask();
       await enter(task.id);
       expect(page.hasLocation).toBe(true);
       page.removeLocation();
@@ -552,7 +553,7 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
       expect(page.accuracy).toBeUndefined();
       expect(page.hasLocation).toBe(false);
       expect(page.locationMessage).toBe('Ubicación eliminada del formulario.');
-      page.saveTask();
+      await page.saveTask();
       await vi.waitFor(() => {
         const stored = (JSON.parse(context.storage.get('tareafacil_tasks')!) as Task[]).find(t => t.id === task.id)!;
         expect(stored).not.toHaveProperty('latitude');
@@ -573,10 +574,105 @@ describe('TaskFormPage peripheral flows with deterministic Capacitor doubles', (
       expect(page.locationRemoved).toBe(true);
       expect(page.isGettingLocation).toBe(false);
       expect(page.hasLocation).toBe(false);
-      page.saveTask();
+      await page.saveTask();
       expect(tasks.getTask(task.id)?.latitude).toBeUndefined();
       expect(tasks.getTask(task.id)?.longitude).toBeUndefined();
       expect(tasks.getTask(task.id)?.accuracy).toBeUndefined();
     });
   });
+  describe('automatic GPS on creation', () => {
+    it('waits for GPS, avoids double submit and preserves photo, schedule and owner', async () => {
+      let finish!: (value: Position) => void;
+      vi.mocked(Geolocation.getCurrentPosition).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      page.photoPath = 'task-photos/existing.png';
+      page.scheduledDate = '2026-11-10'; page.scheduledTime = '15:30';
+      const count = tasks.totalTasks();
+      const first = page.saveTask();
+      await page.saveTask();
+      expect(tasks.totalTasks()).toBe(count);
+      expect(Geolocation.getCurrentPosition).toHaveBeenCalledTimes(1);
+      finish(position()); await first;
+      expect(tasks.totalTasks()).toBe(count + 1);
+      expect(tasks.tasks().at(-1)).toMatchObject({ latitude: -33.45, longitude: -70.66, accuracy: 7,
+        userId: context.userA.id, photoPath: 'task-photos/existing.png',
+        scheduledAt: new Date(2026, 10, 10, 15, 30).toISOString() });
+    });
+
+    it('does not request GPS for invalid input or editing', async () => {
+      page.newTitle = ' '; await page.saveTask();
+      expect(Geolocation.getCurrentPosition).not.toHaveBeenCalled();
+      const task = tasks.addTask('Existing', 'Detail', undefined, undefined, 1, 2, 3)!;
+      await enter(task.id); await page.saveTask();
+      expect(Geolocation.getCurrentPosition).not.toHaveBeenCalled();
+      expect(tasks.getTask(task.id)).toMatchObject({ latitude: 1, longitude: 2, accuracy: 3 });
+    });
+
+    it.each(locationFailures)('offers an explicit choice after $label and saves without stale coordinates', async ({ error }) => {
+      page.latitude = 1; page.longitude = 2; page.accuracy = 3;
+      vi.mocked(Geolocation.getCurrentPosition).mockRejectedValueOnce(error);
+      const count = tasks.totalTasks(); await page.saveTask();
+      expect(tasks.totalTasks()).toBe(count);
+      expect(page.awaitingLocationDecision).toBe(true);
+      expect(page.isSaving).toBe(false);
+      await page.saveTask(true);
+      expect(tasks.totalTasks()).toBe(count + 1);
+      expect(tasks.tasks().at(-1)?.latitude).toBeUndefined();
+      expect(tasks.tasks().at(-1)?.longitude).toBeUndefined();
+      expect(tasks.tasks().at(-1)?.accuracy).toBeUndefined();
+      expect(Geolocation.getCurrentPosition).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      { code: 'OS-PLUG-GLOC-0003', text: 'rechazado' },
+      { code: 'OS-PLUG-GLOC-0007', text: 'desactivado' },
+      { code: 'OS-PLUG-GLOC-0010', text: 'tiempo' },
+      { code: 'OS-PLUG-GLOC-0002', text: 'No se pudo' }
+    ])('shows a specific creation error for $code', async ({ code, text }) => {
+      vi.mocked(Geolocation.getCurrentPosition).mockRejectedValueOnce({ code });
+      await page.saveTask();
+      expect(page.locationMessage).toContain(text);
+      expect(page.awaitingLocationDecision).toBe(true);
+    });
+
+    it('does not continue a failed creation under a different session', async () => {
+      vi.mocked(Geolocation.getCurrentPosition).mockRejectedValueOnce({ code: 1 });
+      await page.saveTask();
+      context.currentUser.set(context.userB);
+      const add = vi.spyOn(tasks, 'addTask');
+      await page.saveTask(true);
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    it('retries after timeout and saves a fresh reading', async () => {
+      vi.mocked(Geolocation.getCurrentPosition).mockRejectedValueOnce({ code: 3 });
+      await page.saveTask(); expect(page.locationMessage).toContain('agotó');
+      await page.saveTask();
+      expect(Geolocation.getCurrentPosition).toHaveBeenCalledTimes(2);
+      expect(tasks.tasks().at(-1)?.latitude).toBe(-33.45);
+    });
+
+    it('shares a pending manual GPS request instead of issuing two', async () => {
+      let finish!: (value: Position) => void;
+      vi.mocked(Geolocation.getCurrentPosition).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      const manual = page.getCurrentLocation(); const saving = page.saveTask();
+      expect(Geolocation.getCurrentPosition).toHaveBeenCalledTimes(1);
+      finish(position()); await manual; await saving;
+      expect(tasks.tasks().at(-1)?.latitude).toBe(-33.45);
+    });
+
+    it.each(['leave', 'logout', 'switch', 'same-user-new-session'])('ignores late GPS after %s', async scenario => {
+      let finish!: (value: Position) => void;
+      vi.mocked(Geolocation.getCurrentPosition).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      const add = vi.spyOn(tasks, 'addTask'); const saving = page.saveTask();
+      if (scenario === 'leave') page.ionViewWillLeave();
+      else if (scenario === 'logout') context.currentUser.set(null);
+      else if (scenario === 'switch') context.currentUser.set(context.userB);
+      else context.currentUser.set({ ...context.userA });
+      TestBed.tick(); finish(position()); await saving;
+      expect(add).not.toHaveBeenCalled();
+      expect(page.latitude).toBeUndefined();
+      expect(navigateBack).not.toHaveBeenCalled();
+    });
+  });
+
 });

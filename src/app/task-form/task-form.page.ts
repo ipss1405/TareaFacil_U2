@@ -1,5 +1,7 @@
 import {
   ChangeDetectorRef,
+  effect,
+  OnDestroy,
   Component,
   inject,
   viewChildren
@@ -58,6 +60,8 @@ import {
   locationOutline
 } from 'ionicons/icons';
 
+import { AuthService } from '../auth.service';
+
 import {
   TaskService
 } from '../task.service';
@@ -80,7 +84,15 @@ import {
     IonIcon
   ]
 })
-export class TaskFormPage {
+export class TaskFormPage implements OnDestroy {
+
+  private readonly auth = inject(AuthService);
+  private active = false;
+  private generation = 0;
+  private locationRequest?: Promise<boolean>;
+  isSaving = false;
+  awaitingLocationDecision = false;
+  private locationDecisionUser?: ReturnType<AuthService['currentUser']>;
 
   private readonly taskService =
     inject(TaskService);
@@ -251,6 +263,19 @@ export class TaskFormPage {
 
   constructor() {
 
+    let previousUser = this.auth.currentUser();
+    let previousReady = this.auth.isReady();
+    effect(() => {
+      const user = this.auth.currentUser();
+      const ready = this.auth.isReady();
+      if (user !== previousUser || ready !== previousReady) {
+        this.generation++;
+        this.awaitingLocationDecision = false;
+        previousUser = user;
+        previousReady = ready;
+      }
+    });
+
     addIcons({
       addOutline,
       pencilOutline,
@@ -265,6 +290,8 @@ export class TaskFormPage {
   async ionViewWillEnter() {
 
     this.clearForm();
+    this.active = true;
+    this.generation++;
     await this.taskService.ready;
 
     const id =
@@ -459,55 +486,57 @@ export class TaskFormPage {
 
   }
 
-  async getCurrentLocation() {
-
+  getCurrentLocation(): Promise<boolean> {
+    if (this.locationRequest) return this.locationRequest;
+    const generation = this.generation;
+    const user = this.auth.currentUser();
+    const valid = () => this.active && this.generation === generation &&
+      this.auth.isReady() && !!user && this.auth.currentUser() === user;
     this.locationMessage = '';
-
     this.isGettingLocation = true;
-
-    try {
-
-      const position =
-        await Geolocation
-          .getCurrentPosition({
-            enableHighAccuracy: true,
-            timeout: 15000,
-            maximumAge: 0
-          });
-
-      this.latitude =
-        position.coords.latitude;
-
-      this.longitude =
-        position.coords.longitude;
-
-      this.accuracy =
-        position.coords.accuracy;
-
-      this.locationRemoved = false;
-
-      this.locationMessage =
-        'Ubicación obtenida correctamente.';
-
-    } catch (error) {
-
-      console.error(
-        'No se pudo obtener la ubicación:',
-        error
-      );
-
-      this.locationMessage =
-        'No se pudo obtener la ubicación. Revisa los permisos de localización.';
-
-    } finally {
-
-      this.isGettingLocation = false;
-
-      this.changeDetector
-        .markForCheck();
-    }
-
+    const request = (async () => {
+      try {
+        const position = await Geolocation.getCurrentPosition({
+          enableHighAccuracy: true, timeout: 15000, maximumAge: 0
+        });
+        if (!valid()) return false;
+        const { latitude, longitude, accuracy } = position.coords;
+        if (![latitude, longitude, accuracy].every(Number.isFinite)) throw new Error('Invalid coordinates');
+        this.latitude = latitude;
+        this.longitude = longitude;
+        this.accuracy = accuracy;
+        this.locationRemoved = false;
+        this.locationMessage = 'Ubicación obtenida correctamente.';
+        return true;
+      } catch (error) {
+        if (!valid()) return false;
+        console.error('No se pudo obtener la ubicación:', error);
+        const code = (error as { code?: string | number })?.code;
+        this.locationMessage = code === 1 || code === 'OS-PLUG-GLOC-0003'
+          ? 'Permiso de ubicación rechazado. Puedes habilitarlo en los ajustes y reintentar.'
+          : ['OS-PLUG-GLOC-0007', 'OS-PLUG-GLOC-0009'].includes(String(code))
+            ? 'El servicio de ubicación/GPS está desactivado. Actívalo y reintenta.'
+            : code === 3 || code === 'OS-PLUG-GLOC-0010'
+              ? 'Se agotó el tiempo para obtener la ubicación. Puedes reintentar.'
+              : 'No se pudo obtener la ubicación. Inténtalo de nuevo.';
+        return false;
+      } finally {
+        this.isGettingLocation = false;
+        this.locationRequest = undefined;
+        this.changeDetector.markForCheck();
+      }
+    })();
+    this.locationRequest = request;
+    return request;
   }
+
+  ionViewWillLeave() {
+    this.active = false;
+    this.generation++;
+    this.awaitingLocationDecision = false;
+  }
+
+  ngOnDestroy() { this.ionViewWillLeave(); }
 
   removeLocation() {
 
@@ -524,7 +553,10 @@ export class TaskFormPage {
 
   }
 
-  saveTask() {
+  async saveTask(continueWithoutLocation = false) {
+
+    if (this.isSaving || !this.active || !this.auth.isReady() || !this.auth.currentUser()) return;
+    if (continueWithoutLocation && (!this.awaitingLocationDecision || this.auth.currentUser() !== this.locationDecisionUser)) return;
 
     this.validationAttempted = true;
 
@@ -543,51 +575,79 @@ export class TaskFormPage {
       return;
     }
 
-    const scheduledAt =
-      this.selectedSchedule
-        ?.toISOString() ?? '';
-
-    const saved =
-      this.editingId === null
-
-        ? this.taskService.addTask(
-            this.newTitle,
-            this.newDescription,
-            this.photoPath,
-            scheduledAt,
-            this.latitude,
-            this.longitude,
-            this.accuracy
-          )
-
-        : this.taskService.updateTask(
-            this.editingId,
-            this.newTitle,
-            this.newDescription,
-            this.photoPath,
-            scheduledAt,
-            this.latitude,
-            this.longitude,
-            this.accuracy,
-            this.locationRemoved
-          );
-
-    if (saved) {
-
-      this.clearForm();
-
-      void this.nav.navigateBack(
-        '/home',
-        {
-          replaceUrl: true
+    const generation = this.generation;
+    const user = this.auth.currentUser();
+    this.isSaving = true;
+    try {
+      if (this.editingId === null) {
+        if (!continueWithoutLocation) {
+          const located = await this.getCurrentLocation();
+          if (!this.active || generation !== this.generation || this.auth.currentUser() !== user || !this.auth.isReady()) return;
+          if (!located) {
+            this.locationDecisionUser = user;
+            this.awaitingLocationDecision = true;
+            return;
+          }
+        } else {
+          this.latitude = undefined;
+          this.longitude = undefined;
+          this.accuracy = undefined;
         }
-      );
+        this.awaitingLocationDecision = false;
+      }
 
+      const scheduledAt =
+        this.selectedSchedule
+          ?.toISOString() ?? '';
+
+      const saved =
+        this.editingId === null
+
+          ? this.taskService.addTask(
+              this.newTitle,
+              this.newDescription,
+              this.photoPath,
+              scheduledAt,
+              this.latitude,
+              this.longitude,
+              this.accuracy
+            )
+
+          : this.taskService.updateTask(
+              this.editingId,
+              this.newTitle,
+              this.newDescription,
+              this.photoPath,
+              scheduledAt,
+              this.latitude,
+              this.longitude,
+              this.accuracy,
+              this.locationRemoved
+            );
+
+      if (saved) {
+
+        this.clearForm();
+
+        void this.nav.navigateBack(
+          '/home',
+          {
+            replaceUrl: true
+          }
+        );
+
+      }
+
+    } finally {
+      this.isSaving = false;
+      this.changeDetector.markForCheck();
     }
 
   }
 
   cancelEdit() {
+
+    this.ionViewWillLeave();
 
     this.clearForm();
 
@@ -878,7 +938,7 @@ export class TaskFormPage {
 
     this.locationMessage = '';
 
-    this.isGettingLocation = false;
+    this.awaitingLocationDecision = false;
 
     this.locationRemoved = false;
 

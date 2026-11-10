@@ -198,7 +198,7 @@
         <h3 id="resources-heading">Recursos de la tarea</h3>
         <div class="resources-grid">
           <div class="resource-card location-resource" [class.is-attached]="hasLocation">
-            <button type="button" class="resource-trigger" [disabled]="isGettingLocation"
+            <button type="button" class="resource-trigger" [disabled]="isGettingLocation || isSaving"
               [attr.aria-busy]="isGettingLocation" aria-describedby="location-feedback"
               [attr.aria-label]="hasLocation ? 'Actualizar ubicación registrada' : 'Obtener ubicación'"
               (click)="getCurrentLocation()">
@@ -211,13 +211,13 @@
             </button>
             @if (hasLocation) {
               <div class="resource-actions">
-                <ion-button class="resource-update" fill="clear" [disabled]="isGettingLocation" (click)="getCurrentLocation()" aria-label="Actualizar ubicación">Actualizar</ion-button>
+                <ion-button class="resource-update" fill="clear" [disabled]="isGettingLocation || isSaving" (click)="getCurrentLocation()" aria-label="Actualizar ubicación">Actualizar</ion-button>
                 <ion-button class="resource-remove" fill="clear" (click)="removeLocation()" aria-label="Quitar ubicación" title="Quitar ubicación"><ion-icon slot="icon-only" name="close-outline" aria-hidden="true"></ion-icon></ion-button>
               </div>
             }
           </div>
           <div class="resource-card photo-resource" [class.is-attached]="!!photoPath">
-            <button type="button" class="resource-trigger" [disabled]="isTakingPhoto"
+            <button type="button" class="resource-trigger" [disabled]="isTakingPhoto || isSaving"
               [attr.aria-busy]="isTakingPhoto" aria-describedby="camera-feedback"
               [attr.aria-label]="photoPath ? 'Cambiar fotografía adjunta' : 'Tomar fotografía'"
               (click)="takePhoto()">
@@ -234,7 +234,7 @@
             </button>
             @if (photoPath) {
               <div class="resource-actions">
-                <ion-button class="resource-update" fill="clear" [disabled]="isTakingPhoto" (click)="takePhoto()" aria-label="Cambiar fotografía">Cambiar</ion-button>
+                <ion-button class="resource-update" fill="clear" [disabled]="isTakingPhoto || isSaving" (click)="takePhoto()" aria-label="Cambiar fotografía">Cambiar</ion-button>
                 <ion-button class="resource-remove" fill="clear" (click)="removePhoto()" aria-label="Quitar fotografía" title="Quitar fotografía"><ion-icon slot="icon-only" name="close-outline" aria-hidden="true"></ion-icon></ion-button>
               </div>
             }
@@ -243,6 +243,13 @@
         <p id="location-feedback" class="resource-message" role="status" aria-live="polite">{{ locationMessage }}</p>
         <p id="camera-feedback" class="resource-message" role="status" aria-live="polite">{{ cameraMessage }}</p>
       </section>
+
+      @if (awaitingLocationDecision && editingId === null) {
+        <div class="resource-message" role="group" aria-label="No se pudo registrar la ubicación" aria-describedby="location-feedback">
+          <ion-button fill="outline" [disabled]="isSaving || isGettingLocation" (click)="saveTask()">Reintentar ubicación</ion-button>
+          <ion-button fill="clear" [disabled]="isSaving || isGettingLocation" (click)="saveTask(true)">Continuar sin ubicación</ion-button>
+        </div>
+      }
 
       <!-- ACCIONES -->
 
@@ -253,6 +260,7 @@
           <ion-button
             class="primary-button"
             expand="block"
+            [disabled]="isSaving" [attr.aria-busy]="isSaving"
             (click)="saveTask()">
 
             <ion-icon
@@ -261,7 +269,7 @@
               aria-hidden="true">
             </ion-icon>
 
-            Agregar tarea
+            {{ isSaving ? 'Obteniendo ubicación...' : 'Agregar tarea' }}
 
           </ion-button>
 
@@ -271,6 +279,7 @@
 
           <ion-button
             class="save-button"
+            [disabled]="isSaving"
             expand="block"
             (click)="saveTask()">
 
