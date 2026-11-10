@@ -26,6 +26,9 @@ export class AuthService {
 
   private readonly remoteAuth = inject(SupabaseAuthService);
 
+  private provisioning = false;
+  private sessionGeneration = 0;
+
   private readonly usersKey =
     'tareafacil_users';
 
@@ -183,11 +186,7 @@ export class AuthService {
         );
 
     if (!user) {
-      return {
-        success: false,
-        message:
-          'Correo o contraseña incorrectos.'
-      };
+      return this.loginRemoteFirstTime(cleanEmail, password);
     }
 
     if (user.remoteUserId) {
@@ -232,7 +231,91 @@ export class AuthService {
     };
   }
 
+  private async loginRemoteFirstTime(email: string, password: string): Promise<AuthResult> {
+    if (!this.isReady() || this.provisioning) {
+      return { success: false, message: 'Espera a que termine el inicio de sesión e inténtalo de nuevo.' };
+    }
+    this.provisioning = true;
+    const generation = this.sessionGeneration;
+    const previousUser = this.currentUser();
+    const assertCurrent = () => {
+      if (generation !== this.sessionGeneration || this.currentUser() !== previousUser) {
+        throw new Error('La sesión cambió. Vuelve a iniciar sesión.');
+      }
+    };
+    let previousUsersValue: string | null = null;
+    let previousSessionValue: string | null = null;
+    let usersAttempted = false;
+    let sessionAttempted = false;
+    let acceptedRemote = false;
+    try {
+      const result = await this.remoteAuth.signIn(email, password);
+      acceptedRemote = result.success;
+      assertCurrent();
+      if (!result.success) return { success: false, message: result.message };
+      const remote = this.remoteAuth.currentUser();
+      if (!remote || remote.id !== result.userId ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(remote.id) ||
+        typeof remote.email !== 'string' || !this.isValidEmail(remote.email.trim())) {
+        throw new Error('Supabase no devolvió una identidad válida para crear el acceso local.');
+      }
+      const authenticatedEmail = remote.email.trim().toLowerCase();
+      const passwordHash = await this.createPasswordHash(password);
+      assertCurrent();
+      const users = this.usersState();
+      const byId = users.find(user => user.remoteUserId === remote.id);
+      const byEmail = users.find(user => user.email.trim().toLowerCase() === authenticatedEmail);
+      if (users.filter(user => user.remoteUserId === remote.id).length > 1 ||
+        (byEmail && byEmail !== byId)) {
+        throw new Error('El correo o la identidad remota ya están asociados a otro perfil local.');
+      }
+      const remoteName = [remote.user_metadata?.['name'], remote.user_metadata?.['full_name']]
+        .find(value => typeof value === 'string' && value.trim());
+      const user: User = byId
+        ? { ...byId, email: authenticatedEmail, passwordHash }
+        : { id: this.createUserId(), remoteUserId: remote.id, email: authenticatedEmail,
+            name: typeof remoteName === 'string' && remoteName.trim() ? remoteName.trim() : 'Usuario',
+            passwordHash, createdAt: new Date().toISOString() };
+      const nextUsers = byId ? users.map(item => item === byId ? user : item) : [...users, user];
+      previousUsersValue = (await Preferences.get({ key: this.usersKey })).value;
+      assertCurrent();
+      previousSessionValue = (await Preferences.get({ key: this.sessionKey })).value;
+      assertCurrent();
+      usersAttempted = true;
+      await Preferences.set({ key: this.usersKey, value: JSON.stringify(nextUsers) });
+      assertCurrent();
+      sessionAttempted = true;
+      await Preferences.set({ key: this.sessionKey, value: user.id });
+      assertCurrent();
+      // Publish only once both persistent writes are confirmed.
+      this.usersState.set(nextUsers);
+      this.currentUserState.set(user);
+      return { success: true, message: 'Sesión iniciada correctamente.' };
+    } catch {
+      let rollbackFailed = false;
+      if (sessionAttempted) {
+        try {
+          if (previousSessionValue === null) await Preferences.remove({ key: this.sessionKey });
+          else await Preferences.set({ key: this.sessionKey, value: previousSessionValue });
+        } catch { rollbackFailed = true; }
+      }
+      if (usersAttempted) {
+        try {
+          if (previousUsersValue === null) await Preferences.remove({ key: this.usersKey });
+          else await Preferences.set({ key: this.usersKey, value: previousUsersValue });
+        } catch { rollbackFailed = true; }
+      }
+      if (acceptedRemote) await this.remoteAuth.signOut();
+      return { success: false, message: rollbackFailed
+        ? 'No se pudo guardar ni restaurar completamente el acceso local. Revisa el almacenamiento y vuelve a intentarlo.'
+        : 'No se pudo validar o guardar el acceso local. No se inició sesión; vuelve a intentarlo.' };
+    } finally {
+      this.provisioning = false;
+    }
+  }
+
   async logout(): Promise<void> {
+    this.sessionGeneration++;
 
     this.currentUserState.set(null);
 

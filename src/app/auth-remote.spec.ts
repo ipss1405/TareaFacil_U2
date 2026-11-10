@@ -52,6 +52,161 @@ describe('AuthService remote coordination', () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
+  describe('first remote login on a new installation', () => {
+    const remoteId = '9b4149d2-e39e-4d3b-870b-a3393d3f9011';
+    const remoteEmail = 'nuevo@example.test';
+    const profile = { id: remoteId, email: remoteEmail, user_metadata: { name: ' Persona remota ' } };
+
+    beforeEach(() => {
+      remote.signIn.mockResolvedValue({ success: true, userId: remoteId });
+      remote.currentUser.mockReturnValue(profile);
+    });
+
+    it('creates a separate local profile and confirms users and session before exposing success', async () => {
+      await initialize();
+      const set = vi.mocked(Preferences.set).getMockImplementation()!;
+      let finish!: () => void;
+      vi.mocked(Preferences.set).mockImplementation(async options => {
+        if (options.key === 'tareafacil_current_user_id') {
+          await new Promise<void>(resolve => { finish = resolve; });
+        }
+        await set(options);
+      });
+      const pending = auth.login(' NUEVO@example.test ', 'Password123!');
+      await vi.waitFor(() => expect(finish).toBeDefined());
+      expect(auth.currentUser()).toBeNull();
+      expect(storage.has('tareafacil_current_user_id')).toBe(false);
+      finish();
+      expect((await pending).success).toBe(true);
+      const user = auth.currentUser()!;
+      expect(user).toMatchObject({ email: remoteEmail, remoteUserId: remoteId, name: 'Persona remota' });
+      expect(user.id).not.toBe(remoteId);
+      expect(user.passwordHash).toContain('.');
+      expect(user.passwordHash).not.toContain('Password123!');
+      expect(JSON.parse(storage.get('tareafacil_users')!)).toEqual([user]);
+      expect(storage.get('tareafacil_current_user_id')).toBe(user.id);
+      expect(remote.signIn).toHaveBeenCalledExactlyOnceWith(remoteEmail, 'Password123!');
+      expect(remote.signUp).not.toHaveBeenCalled();
+    });
+
+    it('uses the authenticated email and a safe fallback name', async () => {
+      remote.currentUser.mockReturnValue({ id: remoteId, email: ' CANONICAL@example.test ', user_metadata: {} });
+      await initialize();
+      expect((await auth.login('alias@example.test', 'Password123!')).success).toBe(true);
+      expect(auth.currentUser()).toMatchObject({ email: 'canonical@example.test', name: 'Usuario' });
+    });
+
+    it('supports offline login after restart once the remote user is cached', async () => {
+      await initialize(); await auth.login(remoteEmail, 'Password123!');
+      const user = auth.currentUser()!; await auth.logout();
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ providers: [{ provide: SupabaseAuthService, useValue: remote }] });
+      await initialize();
+      remote.signIn.mockResolvedValue({ success: false, kind: 'connectivity', message: 'Sin red' });
+      expect((await auth.login(remoteEmail, 'WrongPassword')).success).toBe(false);
+      expect((await auth.login(remoteEmail, 'Password123!')).success).toBe(true);
+      expect(auth.currentUser()!.id).toBe(user.id);
+    });
+
+    it('does not duplicate the same email on subsequent login', async () => {
+      await initialize(); await auth.login(remoteEmail, 'Password123!');
+      const id = auth.currentUser()!.id; await auth.logout();
+      await auth.login('NUEVO@example.test', 'Password123!');
+      expect(JSON.parse(storage.get('tareafacil_users')!)).toHaveLength(1);
+      expect(auth.currentUser()!.id).toBe(id);
+    });
+
+    it('reuses the local ID for a remote UUID already associated under another email', async () => {
+      const existing: User = { id: 'local-existing', remoteUserId: remoteId, name: 'Original',
+        email: 'old@example.test', passwordHash: 'old.hash', createdAt: '2026-01-01' };
+      storage.set('tareafacil_users', JSON.stringify([existing]));
+      await initialize(); await auth.login(remoteEmail, 'Password123!');
+      const users = JSON.parse(storage.get('tareafacil_users')!);
+      expect(users).toHaveLength(1);
+      expect(auth.currentUser()).toMatchObject({ id: existing.id, remoteUserId: remoteId, email: remoteEmail, createdAt: existing.createdAt });
+    });
+
+    it('rejects an authenticated email already owned by another local profile', async () => {
+      storage.set('tareafacil_users', JSON.stringify([{ id: 'local-other', name: 'Other',
+        email: remoteEmail, remoteUserId: 'other-remote', passwordHash: 'keep', createdAt: '2026-01-01' }]));
+      const previous = storage.get('tareafacil_users');
+      await initialize();
+      expect((await auth.login('alias@example.test', 'Password123!')).success).toBe(false);
+      expect(auth.currentUser()).toBeNull();
+      expect(storage.get('tareafacil_users')).toBe(previous);
+    });
+
+    it.each(['rejected', 'connectivity'])('does not create a local profile after remote %s', async kind => {
+      remote.signIn.mockResolvedValue({ success: false, kind, message: 'No autorizado o sin red' });
+      await initialize();
+      expect((await auth.login(remoteEmail, 'Password123!')).success).toBe(false);
+      expect(auth.currentUser()).toBeNull();
+      expect(storage.size).toBe(0);
+      expect(Preferences.set).not.toHaveBeenCalled();
+    });
+
+    it.each([null, { ...profile, id: 'not-a-uuid' }, { ...profile, id: 'ba4149d2-e39e-4d3b-870b-a3393d3f9011' }, { ...profile, email: '' }])('rejects invalid remote identity without local writes: %j', async value => {
+      remote.currentUser.mockReturnValue(value);
+      await initialize();
+      expect((await auth.login(remoteEmail, 'Password123!')).success).toBe(false);
+      expect(storage.size).toBe(0);
+      expect(auth.currentUser()).toBeNull();
+      expect(remote.signOut).toHaveBeenCalledOnce();
+    });
+
+    it.each(['tareafacil_users', 'tareafacil_current_user_id'])('rolls back a failed %s write and allows a clean retry', async key => {
+      await initialize();
+      const set = vi.mocked(Preferences.set).getMockImplementation()!;
+      let fail = true;
+      vi.mocked(Preferences.set).mockImplementation(async options => {
+        await set(options);
+        if (options.key === key && fail) { fail = false; throw new Error('Full disk'); }
+      });
+      const result = await auth.login(remoteEmail, 'Password123!');
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('No se pudo');
+      expect(auth.currentUser()).toBeNull();
+      expect(storage.size).toBe(0);
+      expect(remote.signOut).toHaveBeenCalledOnce();
+      expect((await auth.login(remoteEmail, 'Password123!')).success).toBe(true);
+      expect(JSON.parse(storage.get('tareafacil_users')!)).toHaveLength(1);
+    });
+
+    it('preserves all existing users and unrelated task data after session persistence failure', async () => {
+      const old: User = { id: 'legacy', name: 'Legacy', email: 'legacy@example.test', passwordHash: 'keep', createdAt: '2026-01-01' };
+      storage.set('tareafacil_users', JSON.stringify([old]));
+      storage.set('tareafacil_tasks', '[{"id":1,"userId":"legacy","photoPath":"keep.jpg"}]');
+      const before = new Map(storage);
+      await initialize();
+      const set = vi.mocked(Preferences.set).getMockImplementation()!;
+      vi.mocked(Preferences.set).mockImplementation(async options => {
+        if (options.key === 'tareafacil_current_user_id') throw new Error('Write failed');
+        await set(options);
+      });
+      expect((await auth.login(remoteEmail, 'Password123!')).success).toBe(false);
+      expect(storage).toEqual(before);
+      expect(auth.currentUser()).toBeNull();
+    });
+
+    it('preserves previous users when provisioning succeeds', async () => {
+      const old: User = { id: 'legacy', name: 'Legacy', email: 'legacy@example.test', passwordHash: 'keep', createdAt: '2026-01-01' };
+      storage.set('tareafacil_users', JSON.stringify([old]));
+      await initialize(); await auth.login(remoteEmail, 'Password123!');
+      expect(JSON.parse(storage.get('tareafacil_users')!)[0]).toEqual(old);
+      expect(JSON.parse(storage.get('tareafacil_users')!)).toHaveLength(2);
+    });
+
+    it('does not create duplicates during concurrent first-login attempts', async () => {
+      await initialize();
+      const first = auth.login(remoteEmail, 'Password123!');
+      const second = await auth.login(remoteEmail, 'Password123!');
+      expect(second.success).toBe(false);
+      expect((await first).success).toBe(true);
+      expect(remote.signIn).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(storage.get('tareafacil_users')!)).toHaveLength(1);
+    });
+  });
+
   it('registers remotely before persisting a separate local ID and offline hash', async () => {
     await initialize();
     const result = await auth.register(' Rosa ', ' ROSA@example.test ', 'Password123!');
